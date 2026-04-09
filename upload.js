@@ -16,9 +16,10 @@ async function downloadVideo(url, path) {
 }
 
 async function run() {
+    // نصيحة: جرب تغيير هذا الرابط لفيديو آخر لاحقاً لأن تيك توك قد يحظر المحتوى المكرر جداً
     const videoUrl = 'https://www.w3schools.com/html/mov_bbb.mp4'; 
     const videoPath = './video.mp4';
-    const caption = 'تم النشر تلقائياً بنجاح! 🚀'; 
+    const caption = 'Automated Upload Success! 🚀 #KiroZozo'; 
 
     console.log('1. تحميل الفيديو...');
     await downloadVideo(videoUrl, videoPath);
@@ -34,6 +35,7 @@ async function run() {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
 
     console.log('3. تحميل الكوكيز...');
+    if (!process.env.TIKTOK_COOKIES) throw new Error("TIKTOK_COOKIES secret is missing!");
     const cookies = JSON.parse(process.env.TIKTOK_COOKIES);
     await page.setCookie(...cookies);
 
@@ -52,38 +54,35 @@ async function run() {
         await page.keyboard.press('Backspace');
         await page.keyboard.type(caption);
 
-        console.log('7. انتظار معالجة الفيديو وتفعيل زر النشر...');
-        // الاعتماد على الكود الذي أرسلته أنت (data-e2e)
+        console.log('7. انتظار تفعيل زر النشر (نشر)...');
         const postBtnSelector = 'button[data-e2e="post_video_button"]';
-        
         await page.waitForFunction((sel) => {
             const btn = document.querySelector(sel);
-            // التأكد أن الزر موجود وأن تيك توك فعلّه (data-disabled="false")
             return btn && btn.getAttribute('data-disabled') === 'false';
         }, { timeout: 180000 }, postBtnSelector);
 
-      console.log('8. الضغط على زر النشر (نشر)...');
+        console.log('8. الضغط على زر النشر...');
         await page.click(postBtnSelector);
 
-        console.log('9. الانتظار للتأكد من نجاح العملية على الشاشة...');
-        // ننتظر ظهور كلمة "Manage your posts" أو "View profile" اللي بتظهر بعد النشر
-        try {
-            await page.waitForFunction(() => {
-                return document.body.innerText.includes('Manage your posts') || 
-                       document.body.innerText.includes('Your video is being uploaded') ||
-                       document.body.innerText.includes('View profile');
-            }, { timeout: 30000 });
-            console.log('✅ ظهرت رسالة تأكيد النشر على الواجهة!');
-        } catch (e) {
-            console.log('⚠️ لم تظهر رسالة التأكيد، لكن قد يكون النشر قيد المعالجة.');
-        }
+        console.log('9. انتظار 15 ثانية وتصوير النتيجة النهائية...');
+        await new Promise(r => setTimeout(r, 15000)); 
+        
+        // تصوير الشاشة لنرى ماذا حدث بعد الضغط على نشر
+        await page.screenshot({ path: 'final-result.png', fullPage: true });
+        console.log('📸 تم حفظ الصورة النهائية باسم final-result.png');
 
-        // لقطة شاشة أخيرة "بعد" النشر عشان تتأكد شو صار
-        await page.screenshot({ path: 'after-post.png', fullPage: true });
-
-        console.log('10. انتظار نهائي لضمان استقرار الطلب...');
-        await new Promise(r => setTimeout(r, 20000)); // زدنا الوقت لـ 20 ثانية
-        console.log('🚀 انتهت العملية بالكامل.');
+        console.log('✅ انتهت العملية بنجاح!');
 
     } catch (error) {
-        // ... (كود الـ catch القديم)
+        console.error('❌ حدث خطأ، جاري تصوير الشاشة...');
+        await page.screenshot({ path: 'error-screenshot.png', fullPage: true });
+        throw error;
+    } finally {
+        await browser.close();
+    }
+}
+
+run().catch(err => {
+    console.error(err);
+    process.exit(1);
+});
