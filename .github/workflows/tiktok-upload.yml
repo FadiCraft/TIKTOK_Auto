@@ -1,7 +1,7 @@
 name: TikTok Auto Upload
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # تشغيل يدوي بكبسة زر
 
 jobs:
   upload:
@@ -14,13 +14,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm' # هذا السطر يفعل التخزين المؤقت لتسريع التنصيب
 
       - name: Install Dependencies
-        # إضافة --prefer-offline تجعل npm يبحث عن المكتبات في الكاش أولاً
-        run: npm install --prefer-offline --no-audit
+        # استخدمنا --no-audit لتسريع التنصيب قليلاً
+        run: npm install --no-audit
 
-      - name: Run Script
+      - name: Run TikTok Script
         env:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
         run: node upload.js
