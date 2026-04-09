@@ -1,24 +1,32 @@
-name: TikTok Auto Upload Test
+name: TikTok Auto Upload
 
 on:
-  workflow_dispatch: # هذا السطر بيسمحلك تشغل السكريبت بكيسة زر يدوياً
+  workflow_dispatch:
 
 jobs:
   upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Install Dependencies
-        run: npm install
+        run: |
+          npm install puppeteer-extra puppeteer-extra-plugin-stealth axios puppeteer
 
-      - name: Run TikTok Upload Script
+      - name: Run Script
         env:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
         run: node upload.js
+
+      - name: Upload Screenshot on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-report
+          path: error-screenshot.png
