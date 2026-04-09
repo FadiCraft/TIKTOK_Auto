@@ -1,7 +1,7 @@
 name: TikTok Auto Upload
 
 on:
-  workflow_dispatch: # تشغيل يدوي بكبسة زر
+  workflow_dispatch:
 
 jobs:
   upload:
@@ -15,9 +15,21 @@ jobs:
         with:
           node-version: '20'
 
+      # خطوة الكاش الذكية
+      - name: Cache Node Modules
+        id: cache-npm
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          # بنستخدم محتوى package.json كمفتاح للكاش
+          key: ${{ runner.os }}-node-${{ hashFiles('package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
       - name: Install Dependencies
-        # استخدمنا --no-audit لتسريع التنصيب قليلاً
-        run: npm install --no-audit
+        # هاي الخطوة رح تشتغل "فقط" إذا الكاش مش موجود
+        if: steps.cache-npm.outputs.cache-hit != 'true'
+        run: npm install --no-audit --no-fund
 
       - name: Run TikTok Script
         env:
