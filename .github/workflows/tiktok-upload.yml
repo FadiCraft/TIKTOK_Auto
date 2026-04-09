@@ -1,0 +1,24 @@
+name: TikTok Auto Upload Test
+
+on:
+  workflow_dispatch: # هذا السطر بيسمحلك تشغل السكريبت بكيسة زر يدوياً
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run TikTok Upload Script
+        env:
+          TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
+        run: node upload.js
