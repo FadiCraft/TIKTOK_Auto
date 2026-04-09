@@ -14,10 +14,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm' # هذا السطر يفعل التخزين المؤقت لتسريع التنصيب
 
       - name: Install Dependencies
-        run: |
-          npm install puppeteer-extra puppeteer-extra-plugin-stealth axios puppeteer
+        # إضافة --prefer-offline تجعل npm يبحث عن المكتبات في الكاش أولاً
+        run: npm install --prefer-offline --no-audit
 
       - name: Run Script
         env:
