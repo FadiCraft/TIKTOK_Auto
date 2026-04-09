@@ -62,23 +62,28 @@ async function run() {
             return btn && btn.getAttribute('data-disabled') === 'false';
         }, { timeout: 180000 }, postBtnSelector);
 
-        console.log('8. الضغط على زر النشر (نشر)...');
+      console.log('8. الضغط على زر النشر (نشر)...');
         await page.click(postBtnSelector);
 
-        console.log('9. انتظار نهائي لضمان الرفع...');
-        await new Promise(r => setTimeout(r, 15000)); 
-        console.log('✅ تم النشر بنجاح!');
+        console.log('9. الانتظار للتأكد من نجاح العملية على الشاشة...');
+        // ننتظر ظهور كلمة "Manage your posts" أو "View profile" اللي بتظهر بعد النشر
+        try {
+            await page.waitForFunction(() => {
+                return document.body.innerText.includes('Manage your posts') || 
+                       document.body.innerText.includes('Your video is being uploaded') ||
+                       document.body.innerText.includes('View profile');
+            }, { timeout: 30000 });
+            console.log('✅ ظهرت رسالة تأكيد النشر على الواجهة!');
+        } catch (e) {
+            console.log('⚠️ لم تظهر رسالة التأكيد، لكن قد يكون النشر قيد المعالجة.');
+        }
+
+        // لقطة شاشة أخيرة "بعد" النشر عشان تتأكد شو صار
+        await page.screenshot({ path: 'after-post.png', fullPage: true });
+
+        console.log('10. انتظار نهائي لضمان استقرار الطلب...');
+        await new Promise(r => setTimeout(r, 20000)); // زدنا الوقت لـ 20 ثانية
+        console.log('🚀 انتهت العملية بالكامل.');
 
     } catch (error) {
-        console.error('❌ حدث خطأ، جاري تصوير الشاشة...');
-        await page.screenshot({ path: 'error-screenshot.png', fullPage: true });
-        throw error;
-    } finally {
-        await browser.close();
-    }
-}
-
-run().catch(err => {
-    console.error(err);
-    process.exit(1);
-});
+        // ... (كود الـ catch القديم)
