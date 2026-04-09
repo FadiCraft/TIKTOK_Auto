@@ -1,14 +1,7 @@
 {
-  "name": "tiktok-auto-uploader",
-  "version": "1.0.0",
-  "description": "TikTok Auto Uploader",
-  "main": "upload.js",
-  "scripts": {
-    "start": "node upload.js"
-  },
   "dependencies": {
     "axios": "^1.6.0",
-    "puppeteer": "^21.0.0",
+    "puppeteer": "^21.11.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
