@@ -39,7 +39,6 @@ async function run() {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
 
     console.log('3. تحميل الكوكيز...');
-    if (!process.env.TIKTOK_COOKIES) throw new Error("TIKTOK_COOKIES secret is missing!");
     const cookies = JSON.parse(process.env.TIKTOK_COOKIES);
     await page.setCookie(...cookies);
 
@@ -58,7 +57,7 @@ async function run() {
         await page.keyboard.press('Backspace');
         await page.keyboard.type(caption);
 
-        console.log('7. انتظار تفعيل زر النشر (نشر)...');
+        console.log('7. انتظار تفعيل زر النشر الأصلي...');
         const postBtnSelector = 'button[data-e2e="post_video_button"]';
         await page.waitForFunction((sel) => {
             const btn = document.querySelector(sel);
@@ -68,12 +67,39 @@ async function run() {
         console.log('8. الضغط على زر النشر...');
         await page.click(postBtnSelector);
 
-        console.log('9. انتظار 20 ثانية لتأكيد الرفع...');
+        // --- نظام تجاوز النافذة المنبثقة (النشر الآن) ---
+        console.log('9. فحص ظهور نافذة تأكيد إضافية...');
+        try {
+            // ننتظر 10 ثواني لظهور النافذة
+            await new Promise(r => setTimeout(r, 7000)); 
+            
+            // البحث عن زر "النشر الآن" باستخدام النص الظاهر في الصورة
+            const postNowClicked = await page.evaluate(() => {
+                const buttons = Array.from(document.querySelectorAll('button'));
+                const targetBtn = buttons.find(b => b.innerText.includes('النشر الآن') || b.innerText.includes('Post now'));
+                if (targetBtn) {
+                    targetBtn.click();
+                    return true;
+                }
+                return false;
+            });
+
+            if (postNowClicked) {
+                console.log('⚠️ تم اكتشاف النافذة والضغط على "النشر الآن" بنجاح.');
+            } else {
+                console.log('✅ لم تظهر نوافذ منبثقة، يبدو أن النشر مباشر.');
+            }
+        } catch (e) {
+            console.log('ℹ️ تخطي فحص النافذة.');
+        }
+        // ----------------------------------------------
+
+        console.log('10. انتظار 20 ثانية للتأكد من انتهاء الطلب...');
         await new Promise(r => setTimeout(r, 20000)); 
         
         await page.screenshot({ path: 'final-result.png', fullPage: true });
-        console.log('📸 تم حفظ الصورة النهائية final-result.png');
-        console.log('✅ العملية تمت بنجاح!');
+        console.log('📸 تم حفظ الصورة النهائية للتحقق.');
+        console.log('✅ العملية انتهت.');
 
     } catch (error) {
         console.error('❌ حدث خطأ، جاري تصوير الشاشة...');
