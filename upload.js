@@ -16,7 +16,6 @@ async function downloadVideo(url, path) {
 }
 
 async function run() {
-    // نصيحة: جرب تغيير هذا الرابط لفيديو آخر لاحقاً لأن تيك توك قد يحظر المحتوى المكرر جداً
     const videoUrl = 'https://www.w3schools.com/html/mov_bbb.mp4'; 
     const videoPath = './video.mp4';
     const caption = 'Automated Upload Success! 🚀 #KiroZozo'; 
@@ -27,7 +26,12 @@ async function run() {
     console.log('2. تشغيل المتصفح...');
     const browser = await puppeteer.launch({
         headless: "new",
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--disable-dev-shm-usage', 
+            '--disable-blink-features=AutomationControlled'
+        ]
     });
 
     const page = await browser.newPage();
@@ -64,14 +68,12 @@ async function run() {
         console.log('8. الضغط على زر النشر...');
         await page.click(postBtnSelector);
 
-        console.log('9. انتظار 15 ثانية وتصوير النتيجة النهائية...');
-        await new Promise(r => setTimeout(r, 15000)); 
+        console.log('9. انتظار 20 ثانية لتأكيد الرفع...');
+        await new Promise(r => setTimeout(r, 20000)); 
         
-        // تصوير الشاشة لنرى ماذا حدث بعد الضغط على نشر
         await page.screenshot({ path: 'final-result.png', fullPage: true });
-        console.log('📸 تم حفظ الصورة النهائية باسم final-result.png');
-
-        console.log('✅ انتهت العملية بنجاح!');
+        console.log('📸 تم حفظ الصورة النهائية final-result.png');
+        console.log('✅ العملية تمت بنجاح!');
 
     } catch (error) {
         console.error('❌ حدث خطأ، جاري تصوير الشاشة...');
