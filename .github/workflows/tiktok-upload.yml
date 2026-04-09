@@ -1,55 +1,47 @@
 name: TikTok Auto Upload System
 
 on:
-  workflow_dispatch: # تشغيل يدوياً من تبويب Actions
+  workflow_dispatch:
 
 jobs:
   upload_job:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. جلب الكود من المستودع
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. إعداد بيئة Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # 3. نظام الكاش: تخزين المكتبات لتسريع العمليات القادمة
       - name: Cache Node Modules
         id: cache-npm
         uses: actions/cache@v3
         with:
           path: node_modules
-          # المفتاح يعتمد على نظام التشغيل ومحتوى ملف package.json
           key: ${{ runner.os }}-node-${{ hashFiles('package.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
-      # 4. تثبيت المكتبات (فقط إذا لم تكن موجودة في الكاش)
       - name: Install Dependencies
-        if: steps.cache-npm.outputs.cache-hit != 'true'
         run: |
-          npm config set fund false
-          npm config set audit false
           npm install --no-audit --no-fund
+          # تثبيت المتصفح يدوياً لضمان عدم حدوث Error
+          npx puppeteer browsers install chrome
 
-      # 5. تشغيل سكريبت الرفع
       - name: Run TikTok Auto Uploader
         env:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
         run: node upload.js
 
-      # 6. حفظ النتائج (صور الشاشة) سواء نجح السكريبت أو فشل
       - name: Upload Results & Screenshots
-        if: always() # تعمل هذه الخطوة دائماً لرؤية النتيجة النهائية
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tiktok-execution-report
           path: |
             final-result.png
             error-screenshot.png
-          retention-days: 5 # الاحتفاظ بالصور لمدة 5 أيام
+          retention-days: 5
