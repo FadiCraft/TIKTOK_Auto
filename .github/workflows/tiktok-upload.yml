@@ -1,7 +1,9 @@
 name: TikTok Auto Upload System
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # يمكنك تشغيله يدوياً من قائمة Actions
+  # schedule:  # اختياري: تشغيل تلقائي كل 6 ساعات
+  #   - cron: '*/360 * * * *'
 
 jobs:
   upload_job:
@@ -16,6 +18,13 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg yt-dlp
+          # تأكيد تثبيت yt-dlp
+          yt-dlp --version
+
       - name: Cache Node Modules
         id: cache-npm
         uses: actions/cache@v3
@@ -28,13 +37,14 @@ jobs:
       - name: Install Dependencies
         run: |
           npm install --no-audit --no-fund
-          # تثبيت المتصفح يدوياً لضمان عدم حدوث Error
+          # تثبيت متصفح Chrome يدوياً لـ Puppeteer
           npx puppeteer browsers install chrome
 
       - name: Run TikTok Auto Uploader
         env:
-          TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
-        run: node upload.js
+          TIKTOK_COOKIES_ACCOUNT1: ${{ secrets.TIKTOK_COOKIES_ACCOUNT1 }}
+          TIKTOK_COOKIES_ACCOUNT2: ${{ secrets.TIKTOK_COOKIES_ACCOUNT2 }}
+        run: node tiktok_uploader.js
 
       - name: Upload Results & Screenshots
         if: always()
@@ -42,6 +52,6 @@ jobs:
         with:
           name: tiktok-execution-report
           path: |
-            final-result.png
-            error-screenshot.png
+            *.png
+            published_history.json
           retention-days: 5
