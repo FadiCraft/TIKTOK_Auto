@@ -1,10 +1,10 @@
 name: TikTok Auto Upload System
 
 on:
-  workflow_dispatch: # تشغيل يدوي من تبويب Actions
+  workflow_dispatch: 
 
 permissions:
-  contents: write # ضروري جداً لتحديث ملف history.json
+  contents: write
 
 jobs:
   upload_job:
@@ -18,20 +18,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # تم حذف cache: npm لتجنب خطأ Lock file not found
 
       - name: Install System Dependencies (FFmpeg & yt-dlp)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg python3-pip
+          sudo apt-get install -y ffmpeg python3-pip curl
+          # تثبيت المكتبات اللازمة لفك تشفير بيانات تيك توك وتجنب خطأ JSON
+          python3 -m pip install --upgrade pip
+          pip3 install --upgrade yt-dlp requests Brotli certifi
+          
+          # تثبيت yt-dlp كأداة نظام
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
-          pip3 install --upgrade certifi
 
       - name: Install NPM Dependencies
         run: |
           npm install
-          # تثبيت المتصفح اللازم لـ Puppeteer
           npx puppeteer browsers install chrome
 
       - name: Run TikTok Auto Uploader
@@ -44,21 +46,16 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # إنشاء الملف إذا لم يكن موجوداً
-          if [ ! -f history.json ]; then
-            echo "[]" > history.json
-          fi
-          
+          if [ ! -f history.json ]; then echo "[]" > history.json; fi
           git add history.json
           git commit -m "Update video history [skip ci]" || echo "No changes to commit"
           git push origin main
 
-      - name: Upload Artifacts (Screenshots & Logs)
+      - name: Upload Artifacts (Screenshots)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: execution-report
+          name: tiktok-execution-report
           path: |
             *.png
             history.json
