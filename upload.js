@@ -1,116 +1,113 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { execSync } = require('child_process');
 const fs = require('fs');
 const axios = require('axios');
 
 puppeteer.use(StealthPlugin());
 
-async function downloadVideo(url, path) {
-    const writer = fs.createWriteStream(path);
-    const response = await axios({ url, method: 'GET', responseType: 'stream' });
-    response.data.pipe(writer);
-    return new Promise((resolve, reject) => {
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-    });
+// --- الإعدادات ---
+const CONFIG = {
+    targetAccount: 'https://www.tiktok.com/@tonnysweden', // الحساب المستهدف للسحب منه
+    myCaption: 'مشهد رهيب! 🔥 #أفلام #سينما #KiroZozo',
+    dbFile: 'history.json',
+    videoPath: './input.mp4',
+    editedPath: './output.mp4'
+};
+
+// 1. دالة لجلب آخر فيديو من الحساب المستهدف
+async function getLatestVideoId(accountUrl) {
+    console.log("🔎 فحص الفيديوهات الجديدة...");
+    const idsRaw = execSync(`yt-dlp --impersonate chrome --flat-playlist --get-id "${accountUrl}"`, { encoding: 'utf-8' });
+    let allIds = idsRaw.trim().split('\n').filter(id => id.trim().length > 0);
+    
+    let history = fs.existsSync(CONFIG.dbFile) ? JSON.parse(fs.readFileSync(CONFIG.dbFile)) : [];
+    const nextId = allIds.find(id => !history.includes(id));
+    
+    return { nextId, history };
 }
 
-async function run() {
-    const videoUrl = 'https://www.w3schools.com/html/mov_bbb.mp4'; 
-    const videoPath = './video.mp4';
-    const caption = 'Automated Upload Success! 🚀 #KiroZozo'; 
+// 2. دالة معالجة الفيديو (تغيير البصمة لمنع كشف المحتوى المكرر)
+function processVideo(input, output) {
+    console.log("🎨 جاري معالجة الفيديو تقنياً (تغيير البصمة)...");
+    // تقليل الجودة قليلاً، تغيير الأبعاد 10%، وتعديل الألوان
+    execSync(`ffmpeg -i ${input} -vf "scale=iw*1.1:ih*1.1,crop=iw/1.1:ih/1.1,eq=brightness=0.02:contrast=1.03" -map_metadata -1 -c:v libx264 -crf 24 -c:a aac -y ${output}`);
+}
 
-    console.log('1. تحميل الفيديو...');
-    await downloadVideo(videoUrl, videoPath);
-
-    console.log('2. تشغيل المتصفح...');
+// 3. دالة الرفع عبر المتصفح
+async function uploadToTikTok(videoPath, caption) {
     const browser = await puppeteer.launch({
         headless: "new",
-        args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox', 
-            '--disable-dev-shm-usage', 
-            '--disable-blink-features=AutomationControlled'
-        ]
+        args: ['--no-sandbox', '--disable-blink-features=AutomationControlled']
     });
 
     const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 720 });
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36');
-
-    console.log('3. تحميل الكوكيز...');
     const cookies = JSON.parse(process.env.TIKTOK_COOKIES);
     await page.setCookie(...cookies);
 
     try {
-        console.log('4. التوجه لصفحة الرفع...');
-        await page.goto('https://www.tiktok.com/upload?lang=ar', { waitUntil: 'networkidle2', timeout: 90000 });
+        console.log('📤 الدخول لصفحة الرفع...');
+        await page.goto('https://www.tiktok.com/upload?lang=ar', { waitUntil: 'networkidle2' });
 
-        console.log('5. اختيار ملف الفيديو...');
-        const fileInput = await page.waitForSelector('input[type="file"]', { timeout: 30000 });
+        console.log('📁 رفع الملف...');
+        const fileInput = await page.waitForSelector('input[type="file"]');
         await fileInput.uploadFile(videoPath);
 
-        console.log('6. كتابة الوصف...');
-        await page.waitForSelector('.public-DraftEditor-content', { timeout: 60000 });
+        console.log('✍️ كتابة الوصف...');
+        await page.waitForSelector('.public-DraftEditor-content');
         await page.click('.public-DraftEditor-content');
-        await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control');
-        await page.keyboard.press('Backspace');
         await page.keyboard.type(caption);
 
-        console.log('7. انتظار تفعيل زر النشر الأصلي...');
-        const postBtnSelector = 'button[data-e2e="post_video_button"]';
+        console.log('⏳ انتظار جاهزية زر النشر...');
+        const postBtn = 'button[data-e2e="post_video_button"]';
         await page.waitForFunction((sel) => {
             const btn = document.querySelector(sel);
             return btn && btn.getAttribute('data-disabled') === 'false';
-        }, { timeout: 180000 }, postBtnSelector);
+        }, { timeout: 120000 }, postBtn);
 
-        console.log('8. الضغط على زر النشر...');
-        await page.click(postBtnSelector);
-
-        // --- نظام تجاوز النافذة المنبثقة (النشر الآن) ---
-        console.log('9. فحص ظهور نافذة تأكيد إضافية...');
-        try {
-            // ننتظر 10 ثواني لظهور النافذة
-            await new Promise(r => setTimeout(r, 7000)); 
-            
-            // البحث عن زر "النشر الآن" باستخدام النص الظاهر في الصورة
-            const postNowClicked = await page.evaluate(() => {
-                const buttons = Array.from(document.querySelectorAll('button'));
-                const targetBtn = buttons.find(b => b.innerText.includes('النشر الآن') || b.innerText.includes('Post now'));
-                if (targetBtn) {
-                    targetBtn.click();
-                    return true;
-                }
-                return false;
-            });
-
-            if (postNowClicked) {
-                console.log('⚠️ تم اكتشاف النافذة والضغط على "النشر الآن" بنجاح.');
-            } else {
-                console.log('✅ لم تظهر نوافذ منبثقة، يبدو أن النشر مباشر.');
-            }
-        } catch (e) {
-            console.log('ℹ️ تخطي فحص النافذة.');
-        }
-        // ----------------------------------------------
-
-        console.log('10. انتظار 20 ثانية للتأكد من انتهاء الطلب...');
-        await new Promise(r => setTimeout(r, 20000)); 
+        await page.click(postBtn);
+        console.log('✅ تم الضغط على زر النشر بنجاح!');
         
-        await page.screenshot({ path: 'final-result.png', fullPage: true });
-        console.log('📸 تم حفظ الصورة النهائية للتحقق.');
-        console.log('✅ العملية انتهت.');
-
-    } catch (error) {
-        console.error('❌ حدث خطأ، جاري تصوير الشاشة...');
-        await page.screenshot({ path: 'error-screenshot.png', fullPage: true });
-        throw error;
+        await new Promise(r => setTimeout(r, 10000)); // انتظار نهائي
+    } catch (err) {
+        console.error('❌ خطأ أثناء الرفع:', err.message);
     } finally {
         await browser.close();
     }
 }
 
-run().catch(err => {
-    console.error(err);
-    process.exit(1);
-});
+// --- المحرك الرئيسي ---
+async function startBot() {
+    try {
+        // الخطوة 1: البحث عن فيديو جديد
+        const { nextId, history } = await getLatestVideoId(CONFIG.targetAccount);
+        
+        if (!nextId) {
+            console.log("✅ لا توجد فيديوهات جديدة لنشرها.");
+            return;
+        }
+
+        console.log(`🎯 فيديو جديد مكتشف: ${nextId}`);
+
+        // الخطوة 2: التحميل
+        console.log("📥 جاري التحميل...");
+        execSync(`yt-dlp --impersonate chrome -o "${CONFIG.videoPath}" "https://www.tiktok.com/@any/video/${nextId}"`);
+
+        // الخطوة 3: المونتاج السريع لتجنب الحظر
+        processVideo(CONFIG.videoPath, CONFIG.editedPath);
+
+        // الخطوة 4: الرفع إلى حسابك
+        await uploadToTikTok(CONFIG.editedPath, CONFIG.myCaption);
+
+        // الخطوة 5: تحديث السجل
+        history.push(nextId);
+        fs.writeFileSync(CONFIG.dbFile, JSON.stringify(history, null, 2));
+        
+        console.log("🚀 انتهت العملية بنجاح كامل!");
+
+    } catch (error) {
+        console.error("⚠️ حدث خطأ في النظام:", error.message);
+    }
+}
+
+startBot();
