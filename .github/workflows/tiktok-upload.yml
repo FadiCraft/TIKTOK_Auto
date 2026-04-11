@@ -2,6 +2,9 @@ name: TikTok Auto Upload System
 
 on:
   workflow_dispatch:
+  # يمكنك إضافة تشغيل تلقائي كل 6 ساعات مثلاً
+  # schedule:
+  #   - cron: '0 */6 * * *'
 
 jobs:
   upload_job:
@@ -16,32 +19,40 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Cache Node Modules
-        id: cache-npm
-        uses: actions/cache@v3
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: Install Dependencies
+      - name: Install System Dependencies (FFmpeg & yt-dlp)
         run: |
-          npm install --no-audit --no-fund
-          # تثبيت المتصفح يدوياً لضمان عدم حدوث Error
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+
+      - name: Install NPM Dependencies
+        run: |
+          npm install
           npx puppeteer browsers install chrome
 
       - name: Run TikTok Auto Uploader
         env:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
+          # إذا كنت تستخدم اليوتيوب أضف الرموز الخاصة به هنا أيضاً
         run: node upload.js
+
+      - name: Save History Changes
+        if: success()
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add history.json
+          git commit -m "Update video history [skip ci]" || echo "No changes to commit"
+          git push
 
       - name: Upload Results & Screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tiktok-execution-report
+          name: execution-report
           path: |
             final-result.png
             error-screenshot.png
+            history.json
           retention-days: 5
