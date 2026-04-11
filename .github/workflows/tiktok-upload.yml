@@ -1,10 +1,12 @@
 name: TikTok Auto Upload System
 
 on:
-  workflow_dispatch:
-  # يمكنك إضافة تشغيل تلقائي كل 6 ساعات مثلاً
+  workflow_dispatch: # تشغيل يدوي
   # schedule:
-  #   - cron: '0 */6 * * *'
+  #   - cron: '0 */6 * * *' # اختياري: تشغيل كل 6 ساعات
+
+permissions:
+  contents: write # ضروري للسماح للـ Action بتحديث ملف history.json
 
 jobs:
   upload_job:
@@ -18,41 +20,51 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
       - name: Install System Dependencies (FFmpeg & yt-dlp)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg python3-pip
+          # تثبيت yt-dlp بأحدث نسخة
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
+          # تحديث الشهادات لضمان عمل التحميل بدون مشاكل SSL
+          pip3 install --upgrade certifi
 
       - name: Install NPM Dependencies
         run: |
           npm install
+          # تثبيت متصفح كروم لـ Puppeteer
           npx puppeteer browsers install chrome
 
       - name: Run TikTok Auto Uploader
         env:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
-          # إذا كنت تستخدم اليوتيوب أضف الرموز الخاصة به هنا أيضاً
         run: node upload.js
 
       - name: Save History Changes
         if: success()
         run: |
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # إنشاء الملف إذا لم يكن موجوداً لتجنب خطأ fatal: pathspec
+          if [ ! -f history.json ]; then
+            echo "[]" > history.json
+          fi
+          
           git add history.json
+          # سيقوم بالرفع فقط إذا كان هناك تغيير فعلي في الملف
           git commit -m "Update video history [skip ci]" || echo "No changes to commit"
-          git push
+          git push origin main
 
-      - name: Upload Results & Screenshots
+      - name: Upload Artifacts (Screenshots)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: execution-report
+          name: tiktok-execution-report
           path: |
-            final-result.png
-            error-screenshot.png
+            *.png
             history.json
-          retention-days: 5
+          retention-days: 3
