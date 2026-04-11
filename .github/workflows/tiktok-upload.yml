@@ -2,8 +2,8 @@ name: TikTok Hourly Auto Post
 
 on:
   schedule:
-    - cron: '0 * * * *' # تشغيل عند الدقيقة 0 من كل ساعة
-  workflow_dispatch: # للسماح لك بالتشغيل اليدوي للتجربة
+    - cron: '0 * * * *' # يعمل تلقائياً كل ساعة (عند الدقيقة 0)
+  workflow_dispatch: # زر التشغيل اليدوي
 
 permissions:
   contents: write
@@ -40,7 +40,6 @@ jobs:
         env:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
           TIKTOK_COOKIES2: ${{ secrets.TIKTOK_COOKIES2 }}
-          TIKTOK_COOKIES3: ${{ secrets.TIKTOK_COOKIES3 }}
         run: node upload.js
 
       - name: Save Upload History
@@ -50,5 +49,13 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           if [ ! -f history.json ]; then echo "{}" > history.json; fi
           git add history.json
-          git commit -m "Update post history [skip ci]" || echo "No changes"
+          git commit -m "Update post history [skip ci]" || echo "No changes to history"
           git push origin main
+
+      - name: Upload Screenshots for Debugging
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upload-screenshots
+          path: '*.png'
+          retention-days: 3
