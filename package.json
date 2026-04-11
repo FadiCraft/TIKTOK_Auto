@@ -4,7 +4,7 @@
   "description": "Automated TikTok Downloader and Uploader",
   "main": "upload.js",
   "dependencies": {
-    "puppeteer": "^21.11.0",
+    "puppeteer": "^22.0.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
