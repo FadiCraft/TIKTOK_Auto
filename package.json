@@ -1,4 +1,11 @@
 {
+  "name": "tiktok-auto-uploader",
+  "version": "2.0.0",
+  "description": "Auto fetch from TikTok source and upload to multiple TikTok accounts",
+  "main": "tiktok_uploader.js",
+  "scripts": {
+    "start": "node tiktok_uploader.js"
+  },
   "dependencies": {
     "axios": "^1.6.0",
     "puppeteer": "^21.11.0",
