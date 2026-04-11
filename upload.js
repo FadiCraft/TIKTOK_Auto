@@ -11,8 +11,8 @@ const SOURCES = [
 ];
 
 const MY_ACCOUNTS = [
-    { name: "Acc 1", cookies: process.env.TIKTOK_COOKIES },
-    { name: "Acc 2", cookies: process.env.TIKTOK_COOKIES2 }
+    { name: "Acc1", cookies: process.env.TIKTOK_COOKIES },
+    { name: "Acc2", cookies: process.env.TIKTOK_COOKIES2 }
 ].filter(acc => acc.cookies);
 
 const CONFIG = {
@@ -53,26 +53,22 @@ async function uploadAndPost(videoPath, finalCaption, cookiesStr, accName) {
         const fileInput = await page.waitForSelector('input[type="file"]');
         await fileInput.uploadFile(videoPath);
 
-        // انتظار معالجة الفيديو وظهور مربع الوصف
         await page.waitForSelector('.public-DraftEditor-content', { visible: true, timeout: 60000 });
-        await new Promise(r => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 7000));
         
-        console.log(`✍️ كتابة الوصف بدقة...`);
+        console.log(`✍️ كتابة الوصف...`);
         await page.click('.public-DraftEditor-content');
         
-        // مسح شامل للنص
         await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control');
         await page.keyboard.press('Backspace');
         await new Promise(r => setTimeout(r, 1000));
 
-        // الكتابة باستخدام insertText لضمان استقرار العنوان
         await page.evaluate((text) => {
             document.execCommand('insertText', false, text);
         }, finalCaption);
         
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 3000));
 
-        // الضغط على زر النشر الأساسي
         const postBtn = 'button[data-e2e="post_video_button"]';
         await page.waitForFunction(sel => {
             const btn = document.querySelector(sel);
@@ -80,32 +76,24 @@ async function uploadAndPost(videoPath, finalCaption, cookiesStr, accName) {
         }, {timeout: 240000}, postBtn);
 
         await page.click(postBtn);
-        console.log("🚀 تم النقر على زر النشر، بانتظار نوافذ التأكيد...");
 
-        // --- التعامل الدقيق مع النوافذ المنبثقة (تجنب زر إلغاء) ---
         for (let i = 0; i < 3; i++) {
-            await new Promise(r => setTimeout(r, 5000));
+            await new Promise(r => setTimeout(r, 6000));
             await page.evaluate(() => {
                 const btns = Array.from(document.querySelectorAll('button'));
-                // نبحث عن الزر الذي يحتوي على نصوص التأكيد فقط (وليس إلغاء)
                 const target = btns.find(b => {
                     const txt = b.innerText;
                     return (txt.includes('النشر الآن') || txt.includes('تجاهل') || txt.includes('Post now') || txt.includes('Ignore')) 
                            && !txt.includes('إلغاء') && !txt.includes('Cancel');
                 });
-                
-                if (target) {
-                    console.log("🎯 تم العثور على زر التأكيد والنقر عليه");
-                    target.click();
-                }
+                if (target) target.click();
             });
         }
 
         await new Promise(r => setTimeout(r, 10000));
-        await page.screenshot({ path: `final-${accName}.png` });
         return true;
     } catch (err) {
-        console.error(`❌ خطأ:`, err.message);
+        console.error(`❌ خطأ رفع:`, err.message);
         return false;
     } finally {
         await browser.close();
@@ -121,19 +109,19 @@ async function uploadAndPost(videoPath, finalCaption, cookiesStr, accName) {
         if (!history[acc.name]) history[acc.name] = [];
 
         const unposted = availableVideos.filter(v => !history[acc.name].includes(v.id));
-        // الحساب الأول يأخذ فيديو، والحساب الثاني يأخذ الفيديو الذي يليه
         const video = unposted[i] || unposted[0]; 
 
         if (video) {
-            console.log(`\n🎬 ${acc.name} -> فيديو: ${video.title}`);
+            console.log(`\n🎬 الحساب: ${acc.name} -> يستهدف: ${video.title}`);
             const tempFileName = `temp_${acc.name}.mp4`;
+            const finalFile = `final_${acc.name}.mp4`;
 
             try {
+                // استخدام علامات التنصيص حول أسماء الملفات في الأوامر
                 execSync(`yt-dlp --no-check-certificates -o "${tempFileName}" "https://www.tiktok.com/@any/video/${video.id}"`, {stdio: 'inherit'});
                 
-                // تنظيف الفيديو فقط دون تغيير الشكل
-                const finalFile = `final_${acc.name}.mp4`;
-                execSync(`ffmpeg -i ${tempFileName} -c copy -map_metadata -1 -y ${finalFile}`, {stdio: 'ignore'});
+                console.log("⚙️ معالجة نهائية للملف...");
+                execSync(`ffmpeg -i "${tempFileName}" -c copy -map_metadata -1 -y "${finalFile}"`, {stdio: 'ignore'});
 
                 const success = await uploadAndPost(finalFile, `${video.title}${CONFIG.fixedText}`, acc.cookies, acc.name);
 
@@ -145,7 +133,7 @@ async function uploadAndPost(videoPath, finalCaption, cookiesStr, accName) {
                 if (fs.existsSync(tempFileName)) fs.unlinkSync(tempFileName);
                 if (fs.existsSync(finalFile)) fs.unlinkSync(finalFile);
 
-            } catch (e) { console.error(`⚠️ خطأ: ${e.message}`); }
+            } catch (e) { console.error(`⚠️ خطأ في المعالجة: ${e.message}`); }
         }
     }
 })();
