@@ -80,9 +80,23 @@ async function uploadAndPost(videoPath, finalCaption, cookiesStr, accName) {
             return btn && btn.getAttribute('data-disabled') === 'false';
         }, {timeout: 240000}, postBtn);
 
-        await page.click(postBtn);
+await page.click(postBtn);
         
-        // انتظار الرفع وأخذ لقطة شاشة للتأكيد
+        // --- كود جديد: تجاوز نافذة "هل تريد المتابعة للنشر؟" ---
+        console.log("🔍 فحص وجود نافذة تأكيد النشر...");
+        await new Promise(r => setTimeout(r, 4000)); // ننتظر 4 ثوانٍ لتظهر النافذة
+        
+        await page.evaluate(() => {
+            // نبحث عن كل الأزرار، ونضغط على الزر الذي يحتوي على نص "النشر الآن"
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const confirmBtn = buttons.find(btn => btn.innerText.includes('النشر الآن') || btn.innerText.includes('Post now'));
+            if (confirmBtn) {
+                confirmBtn.click();
+            }
+        });
+        // --------------------------------------------------------
+
+        // انتظار اكتمال عملية النشر النهائية
         await new Promise(r => setTimeout(r, 15000));
         await page.screenshot({ path: `success-${accName}-${Date.now()}.png` });
         
