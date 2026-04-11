@@ -42,6 +42,8 @@ jobs:
       - name: Run TikTok Auto Uploader
         env:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
+          TIKTOK_COOKIES2: ${{ secrets.TIKTOK_COOKIES2 }}
+          TIKTOK_COOKIES3: ${{ secrets.TIKTOK_COOKIES3 }}
         run: node upload.js
 
       - name: Save History Changes
