@@ -27,7 +27,7 @@ if (process.env.CHROME_PATH) {
 const CONFIG = {
     fixedCaption: 'للمشاهده الحلقه كامله الرابط في البايو 🎬✨',
     dbFile: 'published_history.json',
-    sourceTikTok: 'https://www.tiktok.com/@tonnysweden', // غير هذا لحساب المصدر
+    sourceTikTok: 'https://www.tiktok.com/@pubity', // غير هذا لحساب المصدر
     accounts: [
         { name: 'account1', cookiesEnv: 'TIKTOK_COOKIES_ACCOUNT1' },
         { name: 'account2', cookiesEnv: 'TIKTOK_COOKIES_ACCOUNT2' }
