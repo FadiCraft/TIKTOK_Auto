@@ -11,13 +11,10 @@ const SOURCES = [
     'https://www.tiktok.com/@dramaboxshorts'
 ];
 
-const MY_ACCOUNTS = [
-    { name: "Acc 1", cookies: process.env.TIKTOK_COOKIES },
-    { name: "Acc 2", cookies: process.env.TIKTOK_COOKIES2 }
-].filter(acc => acc.cookies);
+// تم التعديل هنا: حساب واحد فقط
+const MY_ACCOUNT = { name: "Acc 1", cookies: process.env.TIKTOK_COOKIES };
 
 const CONFIG = {
-    videosPerAccount: 1,
     fixedText: " | شاهد الحلقة كاملة الرابط في البايو 🔗🍿",
     dbFile: 'history.json',
     tempVideo: 'input.mp4',
@@ -63,6 +60,8 @@ async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
     await page.setUserAgent(CONFIG.userAgent);
 
     try {
+        if (!cookiesStr) throw new Error("ملفات تعريف الارتباط (Cookies) غير موجودة!");
+        
         await page.setCookie(...JSON.parse(cookiesStr));
         await page.goto('https://www.tiktok.com/upload?lang=ar', { waitUntil: 'networkidle2', timeout: 120000 });
 
@@ -87,36 +86,53 @@ async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
         
         await page.keyboard.type(finalCaption, { delay: 50 });
 
-        // اختيار "النشر الآن"
+        // اختيار "النشر الآن" (لتجنب الحفظ كمسودة)
         await page.evaluate(() => {
             const nowRadio = document.querySelector('input[value="post_now"]');
             if (nowRadio) nowRadio.click();
         });
 
-        // انتظار تفعيل زر النشر
+        // انتظار تفعيل زر النشر الرئيسي
         const postBtn = 'button[data-e2e="post_video_button"]';
         await page.waitForFunction(sel => {
             const btn = document.querySelector(sel);
             return btn && btn.getAttribute('data-disabled') === 'false';
         }, { timeout: 240000 }, postBtn);
 
+        console.log("🚀 جاري الضغط على زر النشر...");
         await page.click(postBtn);
         
-        console.log("🔍 فحص وجود نافذة تأكيد النشر...");
-        await new Promise(r => setTimeout(r, 4000));
+        // --- معالجة نافذة تأكيد النشر (مثل الصورة المرفقة) ---
+        console.log("🔍 فحص وجود نافذة تأكيد النشر (هل تريد المتابعة للنشر؟)...");
+        
+        // ننتظر قليلاً لظهور النافذة
+        await new Promise(r => setTimeout(r, 6000));
         
         await page.evaluate(() => {
+            // البحث عن جميع الأزرار في الصفحة
             const buttons = Array.from(document.querySelectorAll('button'));
+            
+            // استهداف الزر الذي يحتوي على النص المطلوب
             const confirmBtn = buttons.find(btn => 
-                btn.innerText.includes('النشر الآن') || 
-                btn.innerText.includes('Post now') ||
-                btn.innerText.includes('نشر')
+                (btn.innerText && btn.innerText.trim() === 'النشر الآن') || 
+                (btn.innerText && btn.innerText.trim() === 'Post now') ||
+                (btn.innerText && btn.innerText.includes('النشر الآن'))
             );
+            
+            // استهداف إضافي في حال كان تيك توك يستخدم div بدلاً من button
+            const divs = Array.from(document.querySelectorAll('div[role="button"]'));
+            const confirmDiv = divs.find(div => 
+                (div.innerText && div.innerText.trim() === 'النشر الآن')
+            );
+
             if (confirmBtn) {
                 confirmBtn.click();
+            } else if (confirmDiv) {
+                confirmDiv.click();
             }
         });
 
+        // ننتظر حتى تكتمل عملية النشر
         await new Promise(r => setTimeout(r, 15000));
         await page.screenshot({ path: `success-${accName}-${Date.now()}.png` });
         
@@ -139,7 +155,6 @@ async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
     if (!history.posted) {
         const oldHistory = history;
         history = { posted: [] };
-        // جمع كل الفيديوهات المنشورة من جميع الحسابات
         Object.values(oldHistory).forEach(videos => {
             if (Array.isArray(videos)) {
                 history.posted.push(...videos);
@@ -152,7 +167,7 @@ async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
     const availableVideos = await fetchNewVideos();
     console.log(`📹 تم العثور على ${availableVideos.length} فيديو متاح`);
 
-    // اختيار فيديو عشوائي لم يتم نشره من قبل على أي حساب
+    // اختيار فيديو عشوائي لم يتم نشره من قبل
     const unpostedVideos = availableVideos.filter(v => !history.posted.includes(v.id));
     
     if (unpostedVideos.length === 0) {
@@ -160,7 +175,7 @@ async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
         return;
     }
 
-    // اختيار فيديو عشوائي
+    // اختيار فيديو عشوائي واحد
     const selectedVideo = unpostedVideos[Math.floor(Math.random() * unpostedVideos.length)];
     console.log(`🎯 تم اختيار فيديو عشوائي: ${selectedVideo.id}`);
 
@@ -172,42 +187,32 @@ async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
     }
     
     console.log(`📌 العنوان الأصلي: ${originalTitle}`);
+    console.log(`\n🚀 العمل على حساب: ${MY_ACCOUNT.name}`);
 
-    // نشر نفس الفيديو على كلا الحسابين
-    for (let i = 0; i < MY_ACCOUNTS.length; i++) {
-        const acc = MY_ACCOUNTS[i];
-        console.log(`\n🚀 العمل على حساب: ${acc.name} (${i + 1}/${MY_ACCOUNTS.length})`);
+    // تنظيف الملفات القديمة
+    if (fs.existsSync(CONFIG.tempVideo)) fs.unlinkSync(CONFIG.tempVideo);
+    if (fs.existsSync(CONFIG.outputVideo)) fs.unlinkSync(CONFIG.outputVideo);
 
-        // تنظيف الملفات القديمة
-        if (fs.existsSync(CONFIG.tempVideo)) fs.unlinkSync(CONFIG.tempVideo);
-        if (fs.existsSync(CONFIG.outputVideo)) fs.unlinkSync(CONFIG.outputVideo);
-
-        try {
-            // تحميل الفيديو
-            console.log("📥 جاري تحميل الفيديو...");
-            execSync(`yt-dlp --no-check-certificates --user-agent "${CONFIG.userAgent}" -o "${CONFIG.tempVideo}" "${selectedVideo.url}"`, {stdio: 'inherit'});
-            
-            // معالجة الفيديو بدون قلب (تم إزالة hflip)
-            console.log("🎨 جاري معالجة الفيديو...");
-            execSync(`ffmpeg -i ${CONFIG.tempVideo} -vf "setpts=0.95*PTS,scale=iw*1.02:ih*1.02,crop=iw/1.02:ih/1.02,eq=brightness=0.03:contrast=1.05" -map_metadata -1 -c:v libx264 -crf 22 -af "atempo=1.05" -y ${CONFIG.outputVideo}`, {stdio: 'ignore'});
-
-            const success = await uploadAndPost(CONFIG.outputVideo, originalTitle, acc.cookies, acc.name);
-
-            if (success && i === MY_ACCOUNTS.length - 1) {
-                // حفظ الفيديو في history فقط بعد نشره على جميع الحسابات
-                history.posted.push(selectedVideo.id);
-                fs.writeFileSync(CONFIG.dbFile, JSON.stringify(history, null, 2));
-                console.log(`💾 تم حفظ الفيديو ${selectedVideo.id} في السجل`);
-            }
-        } catch (e) { 
-            console.error(`⚠️ خطأ تقني في حساب ${acc.name}: ${e.message}`); 
-        }
+    try {
+        // تحميل الفيديو
+        console.log("📥 جاري تحميل الفيديو...");
+        execSync(`yt-dlp --no-check-certificates --user-agent "${CONFIG.userAgent}" -o "${CONFIG.tempVideo}" "${selectedVideo.url}"`, {stdio: 'inherit'});
         
-        // انتظار بين الحسابين
-        if (i < MY_ACCOUNTS.length - 1) {
-            console.log("⏳ انتظار 30 ثانية قبل الانتقال للحساب التالي...");
-            await new Promise(r => setTimeout(r, 30000));
+        // معالجة الفيديو 
+        console.log("🎨 جاري معالجة الفيديو...");
+        execSync(`ffmpeg -i ${CONFIG.tempVideo} -vf "setpts=0.95*PTS,scale=iw*1.02:ih*1.02,crop=iw/1.02:ih/1.02,eq=brightness=0.03:contrast=1.05" -map_metadata -1 -c:v libx264 -crf 22 -af "atempo=1.05" -y ${CONFIG.outputVideo}`, {stdio: 'ignore'});
+
+        // رفع الفيديو ونشره للحساب الوحيد
+        const success = await uploadAndPost(CONFIG.outputVideo, originalTitle, MY_ACCOUNT.cookies, MY_ACCOUNT.name);
+
+        if (success) {
+            // حفظ الفيديو في السجل بعد نجاح النشر
+            history.posted.push(selectedVideo.id);
+            fs.writeFileSync(CONFIG.dbFile, JSON.stringify(history, null, 2));
+            console.log(`💾 تم حفظ الفيديو ${selectedVideo.id} في السجل لمنع تكراره`);
         }
+    } catch (e) { 
+        console.error(`⚠️ خطأ تقني: ${e.message}`); 
     }
 
     // تنظيف الملفات المؤقتة
