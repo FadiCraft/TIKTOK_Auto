@@ -18,7 +18,7 @@ const CONFIG = {
 // 1. دالة لجلب آخر فيديو من الحساب المستهدف
 async function getLatestVideoId(accountUrl) {
     console.log("🔎 فحص الفيديوهات الجديدة...");
-    const idsRaw = execSync(`yt-dlp --impersonate chrome --flat-playlist --get-id "${accountUrl}"`, { encoding: 'utf-8' });
+    execSync(`yt-dlp --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -o "${CONFIG.videoPath}" "https://www.tiktok.com/@any/video/${nextId}"`);
     let allIds = idsRaw.trim().split('\n').filter(id => id.trim().length > 0);
     
     let history = fs.existsSync(CONFIG.dbFile) ? JSON.parse(fs.readFileSync(CONFIG.dbFile)) : [];
