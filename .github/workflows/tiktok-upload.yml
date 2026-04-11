@@ -1,10 +1,10 @@
 name: TikTok Auto Upload System
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch: # تشغيل يدوي
 
 permissions:
-  contents: write
+  contents: write # للسماح بتحديث ملف history.json
 
 jobs:
   upload_job:
@@ -23,17 +23,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg python3-pip curl
-          # تثبيت المكتبات اللازمة لفك تشفير بيانات تيك توك وتجنب خطأ JSON
+          # تثبيت yt-dlp ومكتبات فك تشفير البيانات (Brotli ضرورية لتجنب خطأ JSON)
           python3 -m pip install --upgrade pip
           pip3 install --upgrade yt-dlp requests Brotli certifi
           
-          # تثبيت yt-dlp كأداة نظام
+          # تثبيت أداة yt-dlp كأمر نظام
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
       - name: Install NPM Dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true' # تسريع التثبيت بمنع تحميل المتصفح المدمج
         run: |
-          npm install
+          npm install --no-audit --no-fund
+          # تحميل المتصفح المناسب يدوياً مرة واحدة فقط
           npx puppeteer browsers install chrome
 
       - name: Run TikTok Auto Uploader
@@ -46,7 +49,10 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # التأكد من وجود ملف التاريخ
           if [ ! -f history.json ]; then echo "[]" > history.json; fi
+          
           git add history.json
           git commit -m "Update video history [skip ci]" || echo "No changes to commit"
           git push origin main
@@ -55,7 +61,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tiktok-execution-report
+          name: execution-report
           path: |
             *.png
             history.json
