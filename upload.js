@@ -5,97 +5,139 @@ const fs = require('fs');
 
 puppeteer.use(StealthPlugin());
 
+// --- الإعدادات والمصادر ---
 const SOURCES = [
-    'https://www.dailymotion.com/video/x9z2nlw', 
-    'https://www.dailymotion.com/tseries'       
+    'https://www.tiktok.com/@dramawaveapp',
+    'https://www.tiktok.com/@dramaboxshorts'
 ];
+
+const MY_ACCOUNT = { name: "Acc 1", cookies: process.env.TIKTOK_COOKIES };
 
 const CONFIG = {
     fixedText: " | شاهد الحلقة كاملة الرابط في البايو 🔗🍿",
     dbFile: 'history.json',
     tempVideo: 'input.mp4',
     outputVideo: 'output.mp4',
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 };
 
-const MY_ACCOUNT = { name: "Acc 1", cookies: process.env.TIKTOK_COOKIES };
-
-// --- وظيفة التحميل الجديدة (تستخدم استراتيجية كسر الحماية) ---
-function downloadFromDailymotion(url) {
-    console.log(`📥 جاري محاولة التحميل عبر استراتيجية كسر الحماية...`);
+// جلب معلومات الفيديو كاملة مع العنوان
+async function fetchVideoInfo(videoUrl) {
     try {
-        // نستخدم --impersonate-client لتقليد متصفح حقيقي بالكامل وتجنب الـ 404
-        const cmd = `yt-dlp --no-check-certificates \
-            --no-cache-dir \
-            --user-agent "${CONFIG.userAgent}" \
-            --add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
-            --add-header "Accept-Language:en-US,en;q=0.5" \
-            --referer "https://www.dailymotion.com/" \
-            -f "best[ext=mp4]/best" \
-            --geo-bypass \
-            -o "${CONFIG.tempVideo}" "${url}"`;
-        
-        execSync(cmd, { stdio: 'inherit' });
-        return true;
+        const cmd = `yt-dlp --no-check-certificates --user-agent "${CONFIG.userAgent}" --print "%(title)s" "${videoUrl}"`;
+        const title = execSync(cmd, { encoding: 'utf-8' }).trim();
+        return title;
     } catch (e) {
-        console.error("❌ فشل التحميل بالطريقة العادية، نجرب الجودة المنخفضة...");
-        try {
-            // محاولة أخيرة بجودة محددة جداً غالباً ما تكون متاحة كملف MP4 مباشر
-            execSync(`yt-dlp -f "http-360/http-480/best" -o "${CONFIG.tempVideo}" "${url}"`, { stdio: 'inherit' });
-            return true;
-        } catch (e2) {
-            throw new Error("Dailymotion is blocking GitHub Servers.");
-        }
+        console.error(`❌ فشل جلب عنوان الفيديو:`, e.message);
+        return null;
     }
 }
 
-async function fetchVideoInfo(videoUrl) {
-    try {
-        const title = execSync(`yt-dlp --get-title "${videoUrl}"`, { encoding: 'utf-8' }).trim();
-        return title;
-    } catch (e) { return "Drama Episode"; }
-}
-
+// جلب قائمة الفيديوهات من المصادر
 async function fetchNewVideos() {
     let allFound = [];
     for (const source of SOURCES) {
+        console.log(`🔎 سحب محتوى من: ${source}`);
         try {
-            const output = execSync(`yt-dlp --flat-playlist --get-id --playlist-items 1-5 "${source}"`, { encoding: 'utf-8' });
+            const cmd = `yt-dlp --no-check-certificates --user-agent "${CONFIG.userAgent}" --flat-playlist --print "%(id)s" --playlist-items 1-30 "${source}"`;
+            const output = execSync(cmd, { encoding: 'utf-8' });
             output.trim().split('\n').forEach(id => {
-                if (id) allFound.push({ id: id.trim(), url: `https://www.dailymotion.com/video/${id.trim()}` });
+                if (id) allFound.push({ id, url: `https://www.tiktok.com/@any/video/${id}` });
             });
-        } catch (e) {}
+        } catch (e) { console.error(`❌ فشل السحب من ${source}:`, e.message); }
     }
     return allFound;
 }
 
-// --- وظيفة الرفع (TikTok) ---
+// عملية الرفع عبر المتصفح 
 async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
     const browser = await puppeteer.launch({
         headless: "new",
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
     });
     const page = await browser.newPage();
+    await page.setUserAgent(CONFIG.userAgent);
+
     try {
-        await page.setCookie(...JSON.parse(cookiesStr));
-        await page.goto('https://www.tiktok.com/upload?lang=ar', { waitUntil: 'networkidle2' });
+        if (!cookiesStr) throw new Error("ملفات تعريف الارتباط (Cookies) غير موجودة!");
         
+        await page.setCookie(...JSON.parse(cookiesStr));
+        await page.goto('https://www.tiktok.com/upload?lang=ar', { waitUntil: 'networkidle2', timeout: 120000 });
+
+        console.log(`📤 جاري رفع الفيديو لحساب ${accName}...`);
         const fileInput = await page.waitForSelector('input[type="file"]');
         await fileInput.uploadFile(videoPath);
 
+        // --- توليد وصف ديناميكي بالكامل ---
+        // استخراج أول كلمتين من العنوان لتحويلها لهاشتاجات ديناميكية (لزيادة التفاعل)
+        const dynamicWords = originalTitle.split(' ').slice(0, 2)
+            .map(w => w.replace(/[^a-zA-Z\u0600-\u06FF]/g, ''))
+            .filter(w => w.length > 2);
+        const dynamicHashtags = dynamicWords.map(w => `#${w}`).join(' ');
+        
+        const finalCaption = `${originalTitle} ${CONFIG.fixedText} ${dynamicHashtags} #dramabox #explore`;
+        console.log(`📝 الوصف الديناميكي الذي سيتم كتابته:\n${finalCaption}`);
+        
+        // --- الطريقة الصحيحة للتعامل مع محرر Draft.js الخاص بتيك توك ---
         const editorSelector = '.public-DraftEditor-content';
-        await page.waitForSelector(editorSelector, { timeout: 60000 });
+        await page.waitForSelector(editorSelector, { timeout: 30000 });
         await page.focus(editorSelector);
-        await page.keyboard.type(`${originalTitle} ${CONFIG.fixedText} #explore #dailymotion`);
+        await page.click(editorSelector);
+        
+        // 1. تحديد أي نص موجود مسبقاً (Ctrl+A) ثم مسحه
+        await page.keyboard.down('Control');
+        await page.keyboard.press('A');
+        await page.keyboard.up('Control');
+        await page.keyboard.press('Backspace');
 
+        // 2. كتابة النص الجديد كأنك مستخدم حقيقي (تأخير 50 جزء من الثانية بين كل حرف)
+        await page.keyboard.type(finalCaption, { delay: 50 });
+
+        // اختيار "النشر الآن" (لتجنب الحفظ كمسودة)
+        await page.evaluate(() => {
+            const nowRadio = document.querySelector('input[value="post_now"]');
+            if (nowRadio) nowRadio.click();
+        });
+
+        // انتظار تفعيل زر النشر الرئيسي
         const postBtn = 'button[data-e2e="post_video_button"]';
-        await page.waitForFunction(sel => !document.querySelector(sel).disabled, {}, postBtn);
+        await page.waitForFunction(sel => {
+            const btn = document.querySelector(sel);
+            return btn && btn.getAttribute('data-disabled') === 'false';
+        }, { timeout: 240000 }, postBtn);
+
+        console.log("🚀 جاري الضغط على زر النشر...");
         await page.click(postBtn);
         
-        await new Promise(r => setTimeout(r, 10000));
+        // --- معالجة نافذة تأكيد النشر ---
+        console.log("🔍 فحص وجود نافذة تأكيد النشر...");
+        await new Promise(r => setTimeout(r, 6000));
+        
+        await page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const confirmBtn = buttons.find(btn => 
+                (btn.innerText && btn.innerText.trim() === 'النشر الآن') || 
+                (btn.innerText && btn.innerText.trim() === 'Post now') ||
+                (btn.innerText && btn.innerText.includes('النشر الآن'))
+            );
+            
+            const divs = Array.from(document.querySelectorAll('div[role="button"]'));
+            const confirmDiv = divs.find(div => 
+                (div.innerText && div.innerText.trim() === 'النشر الآن')
+            );
+
+            if (confirmBtn) confirmBtn.click();
+            else if (confirmDiv) confirmDiv.click();
+        });
+
+        await new Promise(r => setTimeout(r, 15000));
+        await page.screenshot({ path: `success-${accName}-${Date.now()}.png` });
+        
+        console.log(`✅ تم النشر بنجاح!`);
         return true;
     } catch (err) {
-        console.error("❌ Error during upload:", err.message);
+        console.error(`❌ فشل الرفع:`, err.message);
+        await page.screenshot({ path: `error-${accName}-${Date.now()}.png` });
         return false;
     } finally {
         await browser.close();
@@ -105,32 +147,52 @@ async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
 // --- المحرك الرئيسي ---
 (async () => {
     let history = fs.existsSync(CONFIG.dbFile) ? JSON.parse(fs.readFileSync(CONFIG.dbFile)) : { posted: [] };
-    const availableVideos = await fetchNewVideos();
-    const unpostedVideos = availableVideos.filter(v => !history.posted.includes(v.id));
-
-    if (unpostedVideos.length === 0) return;
-
-    const selected = unpostedVideos[0];
-    const title = await fetchVideoInfo(selected.url);
-
-    try {
-        // تنفيذ التحميل باستراتيجية كسر الحماية
-        downloadFromDailymotion(selected.url);
-
-        console.log("🎨 معالجة الفيديو...");
-        execSync(`ffmpeg -i ${CONFIG.tempVideo} -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -c:v libx264 -crf 23 -y ${CONFIG.outputVideo}`, { stdio: 'ignore' });
-
-        const success = await uploadAndPost(CONFIG.outputVideo, title, MY_ACCOUNT.cookies, MY_ACCOUNT.name);
-
-        if (success) {
-            history.posted.push(selected.id);
-            fs.writeFileSync(CONFIG.dbFile, JSON.stringify(history, null, 2));
-            console.log("✅ Done!");
-        }
-    } catch (e) {
-        console.error(`⚠️ الحماية منعت التحميل: ${e.message}`);
-        console.log("💡 نصيحة: Dailymotion يحجب GitHub. يفضل استخدام فيديو من TikTok أو YouTube كمصدر حالياً.");
+    
+    if (!history.posted) {
+        const oldHistory = history;
+        history = { posted: [] };
+        Object.values(oldHistory).forEach(videos => {
+            if (Array.isArray(videos)) history.posted.push(...videos);
+        });
     }
 
-    [CONFIG.tempVideo, CONFIG.outputVideo].forEach(f => { if(fs.existsSync(f)) fs.unlinkSync(f); });
+    const availableVideos = await fetchNewVideos();
+    const unpostedVideos = availableVideos.filter(v => !history.posted.includes(v.id));
+    
+    if (unpostedVideos.length === 0) {
+        console.log("👋 لا يوجد فيديوهات جديدة للنشر حالياً.");
+        return;
+    }
+
+    const selectedVideo = unpostedVideos[Math.floor(Math.random() * unpostedVideos.length)];
+    const originalTitle = await fetchVideoInfo(selectedVideo.url);
+    
+    if (!originalTitle) {
+        console.error("❌ لم نتمكن من جلب عنوان الفيديو");
+        return;
+    }
+
+    if (fs.existsSync(CONFIG.tempVideo)) fs.unlinkSync(CONFIG.tempVideo);
+    if (fs.existsSync(CONFIG.outputVideo)) fs.unlinkSync(CONFIG.outputVideo);
+
+    try {
+        console.log("📥 جاري تحميل الفيديو...");
+        execSync(`yt-dlp --no-check-certificates --user-agent "${CONFIG.userAgent}" -o "${CONFIG.tempVideo}" "${selectedVideo.url}"`, {stdio: 'inherit'});
+        
+        console.log("🎨 جاري معالجة الفيديو...");
+        execSync(`ffmpeg -i ${CONFIG.tempVideo} -vf "setpts=0.95*PTS,scale=iw*1.02:ih*1.02,crop=iw/1.02:ih/1.02,eq=brightness=0.03:contrast=1.05" -map_metadata -1 -c:v libx264 -crf 22 -af "atempo=1.05" -y ${CONFIG.outputVideo}`, {stdio: 'ignore'});
+
+        const success = await uploadAndPost(CONFIG.outputVideo, originalTitle, MY_ACCOUNT.cookies, MY_ACCOUNT.name);
+
+        if (success) {
+            history.posted.push(selectedVideo.id);
+            fs.writeFileSync(CONFIG.dbFile, JSON.stringify(history, null, 2));
+            console.log(`💾 تم حفظ الفيديو لمنع تكراره`);
+        }
+    } catch (e) { 
+        console.error(`⚠️ خطأ تقني: ${e.message}`); 
+    }
+
+    if (fs.existsSync(CONFIG.tempVideo)) fs.unlinkSync(CONFIG.tempVideo);
+    if (fs.existsSync(CONFIG.outputVideo)) fs.unlinkSync(CONFIG.outputVideo);
 })();
