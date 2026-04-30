@@ -7,8 +7,8 @@ puppeteer.use(StealthPlugin());
 
 // --- الإعدادات والمصادر ---
 const SOURCES = [
-    'https://www.tiktok.com/@dramawaveapp',
-    'https://www.tiktok.com/@dramaboxshorts'
+    
+    'https://www.tiktok.com/@kiroapp'
 ];
 
 const MY_ACCOUNT = { name: "Acc 1", cookies: process.env.TIKTOK_COOKIES };
