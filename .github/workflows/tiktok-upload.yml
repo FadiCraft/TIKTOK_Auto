@@ -3,7 +3,7 @@ name: TikTok Hourly Auto Post
 on:
   schedule:
     - cron: '0 0,8,16 * * *'   
-  workflow_dispatch: # زر التشغيل اليدوي
+  workflow_dispatch: 
 
 permissions:
   contents: write
@@ -24,14 +24,12 @@ jobs:
       - name: Install System Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg python3-pip curl
-          pip3 install --upgrade yt-dlp requests Brotli
+          sudo apt-get install -y ffmpeg curl
+          # تثبيت أحدث نسخة من yt-dlp لحل مشاكل Dailymotion
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
       - name: Install NPM Packages
-        env:
-          PUPPETEER_SKIP_DOWNLOAD: 'true'
         run: |
           npm install puppeteer-extra puppeteer-extra-plugin-stealth puppeteer
           npx puppeteer browsers install chrome
@@ -39,7 +37,6 @@ jobs:
       - name: Run Uploader Script
         env:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
-          TIKTOK_COOKIES2: ${{ secrets.TIKTOK_COOKIES2 }}
         run: node upload.js
 
       - name: Save Upload History
@@ -47,15 +44,13 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          if [ ! -f history.json ]; then echo "{}" > history.json; fi
           git add history.json
-          git commit -m "Update post history [skip ci]" || echo "No changes to history"
+          git commit -m "Update history [skip ci]" || echo "No changes"
           git push origin main
 
-      - name: Upload Screenshots for Debugging
-        if: always()
+      - name: Upload Screenshots on Failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: upload-screenshots
+          name: error-screenshots
           path: '*.png'
-          retention-days: 3
