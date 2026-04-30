@@ -21,24 +21,20 @@ const CONFIG = {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 };
 
-// جلب عنوان الفيديو
 async function fetchVideoInfo(videoUrl) {
     try {
         const cmd = `yt-dlp --no-check-certificates --user-agent "${CONFIG.userAgent}" --get-title "${videoUrl}"`;
         return execSync(cmd, { encoding: 'utf-8' }).trim();
     } catch (e) {
-        console.error(`❌ فشل جلب العنوان:`, e.message);
-        return "New Video";
+        return "Video Title";
     }
 }
 
-// جلب قائمة الفيديوهات
 async function fetchNewVideos() {
     let allFound = [];
     for (const source of SOURCES) {
         try {
             console.log(`🔎 سحب المعرفات من: ${source}`);
-            // استخدام --get-id لجلب المعرفات فقط من القائمة
             const cmd = `yt-dlp --no-check-certificates --flat-playlist --get-id --playlist-items 1-5 "${source}"`;
             const output = execSync(cmd, { encoding: 'utf-8' });
             output.trim().split('\n').forEach(id => {
@@ -49,7 +45,6 @@ async function fetchNewVideos() {
     return allFound;
 }
 
-// عملية الرفع (تيك توك)
 async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
     const browser = await puppeteer.launch({
         headless: "new",
@@ -61,30 +56,25 @@ async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
     try {
         if (!cookiesStr) throw new Error("Cookies are missing!");
         await page.setCookie(...JSON.parse(cookiesStr));
-        
         await page.goto('https://www.tiktok.com/upload?lang=ar', { waitUntil: 'networkidle2', timeout: 120000 });
 
         console.log(`📤 رفع الفيديو إلى TikTok...`);
         const fileInput = await page.waitForSelector('input[type="file"]');
         await fileInput.uploadFile(videoPath);
 
-        // إنشاء الوصف والهاشتاجات
         const cleanTitle = originalTitle.replace(/[^\u0600-\u06FFa-zA-Z0-9 ]/g, '');
-        const hashtags = "#explore #dailymotion #drama";
-        const finalCaption = `${cleanTitle} ${CONFIG.fixedText} ${hashtags}`;
+        const finalCaption = `${cleanTitle} ${CONFIG.fixedText} #explore #dailymotion`;
 
         const editorSelector = '.public-DraftEditor-content';
         await page.waitForSelector(editorSelector, { timeout: 60000 });
         await page.focus(editorSelector);
         
-        // مسح النص الافتراضي وكتابة الجديد
         await page.keyboard.down('Control');
         await page.keyboard.press('A');
         await page.keyboard.up('Control');
         await page.keyboard.press('Backspace');
         await page.keyboard.type(finalCaption, { delay: 50 });
 
-        // انتظار زر النشر ليصبح قابلاً للضغط
         const postBtn = 'button[data-e2e="post_video_button"]';
         await page.waitForFunction(sel => {
             const btn = document.querySelector(sel);
@@ -104,34 +94,35 @@ async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
     }
 }
 
-// المحرك الرئيسي
 (async () => {
     let history = fs.existsSync(CONFIG.dbFile) ? JSON.parse(fs.readFileSync(CONFIG.dbFile)) : { posted: [] };
-    
     const availableVideos = await fetchNewVideos();
     const unpostedVideos = availableVideos.filter(v => !history.posted.includes(v.id));
     
-    if (unpostedVideos.length === 0) {
-        console.log("👋 لا فيديوهات جديدة.");
-        return;
-    }
+    if (unpostedVideos.length === 0) return;
 
     const selected = unpostedVideos[0];
     const title = await fetchVideoInfo(selected.url);
 
     try {
-        console.log(`📥 جاري التحميل: ${selected.url}`);
+        console.log(`📥 محاولة تحميل قوية لـ: ${selected.url}`);
         
         /* 
-           تعديل التحميل: 
-           1. --no-cache-dir لضمان عدم طلب روابط منتهية الصلاحية.
-           2. -f "bestvideo+bestaudio/best" لتحميل أفضل جودة متاحة.
-           3. --merge-output-format mp4 لضمان دمج الصوت والفيديو في ملف واحد.
+          تحديث استراتيجية التحميل:
+          - تم اختيار format "best[ext=mp4]" لتجنب ملفات m3u8 التي تسبب 404.
+          - إضافة --geo-bypass لتجنب حظر خوادم GitHub.
+          - إضافة --referer ليوهم الموقع أن الطلب قادم من الموقع نفسه.
         */
-        const downloadCmd = `yt-dlp --no-check-certificates --no-cache-dir --user-agent "${CONFIG.userAgent}" -f "bestvideo+bestaudio/best" --merge-output-format mp4 -o "${CONFIG.tempVideo}" "${selected.url}"`;
+        const downloadCmd = `yt-dlp --no-check-certificates --no-cache-dir \
+            --user-agent "${CONFIG.userAgent}" \
+            --referer "https://www.dailymotion.com/" \
+            --geo-bypass \
+            -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+            -o "${CONFIG.tempVideo}" "${selected.url}"`;
+
         execSync(downloadCmd, { stdio: 'inherit' });
 
-        console.log("🎨 جاري المعالجة (FFmpeg)...");
+        console.log("🎨 جاري المعالجة...");
         execSync(`ffmpeg -i ${CONFIG.tempVideo} -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -c:v libx264 -crf 23 -preset fast -y ${CONFIG.outputVideo}`, { stdio: 'ignore' });
 
         const success = await uploadAndPost(CONFIG.outputVideo, title, MY_ACCOUNT.cookies, MY_ACCOUNT.name);
@@ -139,12 +130,11 @@ async function uploadAndPost(videoPath, originalTitle, cookiesStr, accName) {
         if (success) {
             history.posted.push(selected.id);
             fs.writeFileSync(CONFIG.dbFile, JSON.stringify(history, null, 2));
-            console.log("✅ تم الحفظ في التاريخ.");
+            console.log("✅ تم الحفظ.");
         }
     } catch (e) {
-        console.error(`⚠️ فشلت المهمة: ${e.message}`);
+        console.error(`⚠️ فشل التحميل أو المعالجة: ${e.message}`);
     }
 
-    // تنظيف الملفات المؤقتة
     [CONFIG.tempVideo, CONFIG.outputVideo].forEach(f => { if(fs.existsSync(f)) fs.unlinkSync(f); });
 })();
