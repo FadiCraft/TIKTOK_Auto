@@ -2,7 +2,7 @@ name: TikTok Hourly Auto Post
 
 on:
   schedule:
-    - cron: '0 0,8,16 * * *'   
+   - cron: '0 */1 * * *'   
   workflow_dispatch: # زر التشغيل اليدوي
 
 permissions:
