@@ -7,8 +7,8 @@ puppeteer.use(StealthPlugin());
 
 // --- الإعدادات والمصادر ---
 const SOURCES = [
-    
-    'https://www.tiktok.com/@kiroapp'
+     'https://www.tiktok.com/@shortical.canada',
+    'https://www.tiktok.com/@theunicorndrama_ca'
 ];
 
 const MY_ACCOUNT = { name: "Acc 1", cookies: process.env.TIKTOK_COOKIES };
