@@ -23,15 +23,11 @@ async function getMovieData() {
     const page = await browser.newPage();
     await page.setUserAgent(CONFIG.userAgent);
 
-    // متغير لتخزين رابط البث الثمين بمجرد التقاطه
     let directStreamUrl = null;
 
-    // تفعيل مراقبة الشبكة لالتقاط روابط m3u8 أو mp4
-    await page.setRequestInterception(false); // نترك المتصفح يتعامل طبيعياً مع الطلبات
     page.on('response', response => {
         const url = response.url();
         if (url.includes('master.m3u8') || url.includes('.m3u8') || url.includes('.mp4')) {
-            // استبعاد ملفات الصور أو التصميم التي قد تحمل أسماء مشابهة بالخطأ
             if (!url.includes('.js') && !url.includes('.css') && !url.includes('.png') && !url.includes('.jpg')) {
                 directStreamUrl = url;
             }
@@ -61,16 +57,14 @@ async function getMovieData() {
         await page.goto(watchUrl, { waitUntil: 'networkidle2', timeout: 60000 });
         console.log(`⏳ جاري فحص السيرفرات المتاحة وتجربتها واحداً تلو الآخر...`);
 
-        // معرفة عدد السيرفرات الموجودة في القائمة
         const serverCount = await page.evaluate(() => {
             return document.querySelectorAll('.watch--servers--list ul li').length;
         });
 
         console.log(`📊 تم العثور على (${serverCount}) سيرفرات جاهزة للاختبار.`);
 
-        // الدوران على السيرفرات وتجربتها حتى نجد الرابط
         for (let i = 0; i < serverCount; i++) {
-            if (directStreamUrl) break; // لو وجدنا الرابط من سيرفر سابق نخرج فوراً
+            if (directStreamUrl) break;
 
             const serverName = await page.evaluate((index) => {
                 const el = document.querySelectorAll('.watch--servers--list ul li')[index];
@@ -79,13 +73,11 @@ async function getMovieData() {
 
             console.log(`🔄 جاري تشغيل وتجربة السيرفر رقم [${i + 1}]: ${serverName}...`);
 
-            // الضغط على السيرفر الحالي
             await page.evaluate((index) => {
                 const el = document.querySelectorAll('.watch--servers--list ul li')[index];
                 if (el) el.click();
             }, i);
 
-            // الانتظار 8 ثوانٍ لمنح المشغل فرصة لطلب رابط الـ m3u8 من الشبكة
             await new Promise(r => setTimeout(r, 8000));
 
             if (directStreamUrl) {
@@ -94,7 +86,6 @@ async function getMovieData() {
             }
         }
 
-        // إذا مررنا على كل السيرفرات ولم نجد الرابط، نأخذ لقطة شاشة للمعاينة
         if (!directStreamUrl) {
             console.log(`❌ فشلت جميع السيرفرات في إعطاء رابط مباشر. جاري التقاط لقطة شاشة للأعطال...`);
             await page.screenshot({ path: 'failed-page.png', fullPage: true });
@@ -105,7 +96,6 @@ async function getMovieData() {
 
     } catch (e) {
         console.error(`❌ فشل في مرحلة الكشط:`, e.message);
-        // تأكيد أخذ لقطة شاشة في حال حدوث أي خطأ مفاجئ آخر
         try { await page.screenshot({ path: 'failed-page.png' }); } catch(err){}
         return null;
     } finally {
@@ -116,32 +106,36 @@ async function getMovieData() {
 // 2. دالة فحص المدة والقص عبر FFmpeg بمقاسات تيك توك وتخطي الحقوق
 function processVideoClip(streamUrl, movieTitle) {
     try {
-        console.log(`⏱️ جاري فحص مدة الفيلم الإجمالية عن بُعد عبر ffprobe...`);
+        console.log(`⏱️ جاري فحص مدة الفيلم الإجمالية عن بُعد عبر ffprobe المبسط...`);
         
-        // جلب المدة الإجمالية للبث
-        const durationCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nocorrect_header=1:novariable=1 -sexagesimal "${streamUrl}"`;
-        const durationStr = execSync(durationCmd, { encoding: 'utf-8' }).trim();
+        // أمر مبسط وجذري لجلب المدة بالثواني مباشرة متوافق مع كل نسخ لينكس وجيتهاب
+        const durationCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nocorrect_header=0 "${streamUrl}"`;
+        const durationOutput = execSync(durationCmd, { encoding: 'utf-8' }).trim();
         
-        const p = durationStr.split(':');
-        const totalSeconds = (+p[0]) * 60 * 60 + (+p[1]) * 60 + (+p[2].split('.')[0]);
+        // استخراج الرقم فقط وتحويله لعدد صحيح
+        const totalSeconds = Math.floor(parseFloat(durationOutput.split('=')[1] || durationOutput));
 
-        console.log(`🎬 مدة الفيلم الإجمالية: ${durationStr} (${totalSeconds} ثانية)`);
+        if (isNaN(totalSeconds) || totalSeconds <= 0) {
+            throw new Error(`لم نتمكن من قراءة مدة الفيديو بشكل صحيح. المخرجات: ${durationOutput}`);
+        }
 
-        // الحسابات لتجنب أول وأخر 10 دقائق
+        console.log(`🎬 مدة الفيلم الإجمالية المكتشفة: ${totalSeconds} ثانية.`);
+
+        // الحسابات لتجنب أول وأخر 10 دقائق (600 ثانية)
         const minStart = 10 * 60; 
         const maxStart = totalSeconds - (10 * 60) - 120; 
 
-        if (maxStart <= minStart) {
-            console.log("⚠️ الفيلم قصير جداً، سيتم القص من التوقيت الافتراضي (الدقيقة 12).");
+        let randomStart = 12 * 60; // قيمة افتراضية في حال كان هناك مشكلة في الحساب
+        if (maxStart > minStart) {
+            randomStart = Math.floor(Math.random() * (maxStart - minStart + 1)) + minStart;
         }
 
-        const randomStart = maxStart > minStart ? Math.floor(Math.random() * (maxStart - minStart + 1)) + minStart : 12 * 60;
+        // تحويل الثواني إلى صيغة HH:MM:SS المقبولة في ffmpeg
         const startTimeStr = new Date(randomStart * 1000).toISOString().substr(11, 8);
         
         console.log(`✂️ التوقيت المختار للقص: ${startTimeStr}`);
-        console.log(`🎨 جاري بدء المعالجة والقص الفوري...`);
+        console.log(`🎨 جاري بدء المعالجة والقص الفوري بمقاسات تيك توك...`);
 
-        // أمر الـ FFmpeg المعدل لتركيب الفيديو عمودياً + التعديلات المضادة للحقوق الرقمية وضبط مسار الخط العربي في لينكس
         const ffmpegCmd = `ffmpeg -ss ${startTimeStr} -i "${streamUrl}" -t 00:02:00 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setpts=0.95*PTS,scale=iw*1.02:ih*1.02,crop=iw/1.02:ih/1.02,eq=brightness=0.03:contrast=1.05,drawtext=fontfile=/usr/share/fonts/truetype/kacst/KacstBook.ttf:text='${movieTitle}':fontcolor=white:fontsize=45:x=(w-text_w)/2:y=250,drawtext=fontfile=/usr/share/fonts/truetype/kacst/KacstBook.ttf:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=35:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -c:a aac -af "atempo=1.05" -y ${CONFIG.outputVideo}`;
 
         execSync(ffmpegCmd, { stdio: 'inherit' });
@@ -159,14 +153,12 @@ function processVideoClip(streamUrl, movieTitle) {
 (async () => {
     console.log("🚀 بدء تشغيل سكريبت الأفلام المحدث...");
     
-    // جلب فيلم عشوائي وتجربة السيرفرات
     const movieData = await getMovieData();
     
     if (movieData && movieData.streamUrl) {
         console.log(`\n🍿 اسم الفيلم: ${movieData.title}`);
         console.log(`🔗 رابط البث المستهدف: ${movieData.streamUrl}`);
         
-        // معالجة اللقطة وقصها
         const success = processVideoClip(movieData.streamUrl, movieData.title);
         if (success) {
             console.log("\n✨ انتهت معالجة الفيديو بنجاح وجاهز للرفع التلقائي مستقبلاً!");
