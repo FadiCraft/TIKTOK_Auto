@@ -8,25 +8,40 @@ puppeteer.use(StealthPlugin());
 const MOVIES_SITE = 'https://topcinemaa.cam/movies/';
 
 const CONFIG = {
-    fixedText: "🍿 شاهد الفيلم كامل بدقة عالية، الرابط في البايو 🔗",
+    fixedText: " | شاهد الفيلم كامل الرابط في البايو 🔗🍿",
+    dbFile: 'history.json',
     outputVideo: 'tiktok_ready.mp4',
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 };
 
-// 1. دالة كشط موقع الأفلام واختيار فيلم عشوائي واستخراج رابط التشغيل
+// 1. دالة كشط موقع الأفلام واختيار فيلم وتجربة السيرفرات
 async function getMovieData() {
     const browser = await puppeteer.launch({
-        headless: "new", // يمكنك جعلها false إذا كنت تجربه على جهازك الشخصي لترى المتصفح
+        headless: "new",
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
     });
     const page = await browser.newPage();
     await page.setUserAgent(CONFIG.userAgent);
 
+    // متغير لتخزين رابط البث الثمين بمجرد التقاطه
+    let directStreamUrl = null;
+
+    // تفعيل مراقبة الشبكة لالتقاط روابط m3u8 أو mp4
+    await page.setRequestInterception(false); // نترك المتصفح يتعامل طبيعياً مع الطلبات
+    page.on('response', response => {
+        const url = response.url();
+        if (url.includes('master.m3u8') || url.includes('.m3u8') || url.includes('.mp4')) {
+            // استبعاد ملفات الصور أو التصميم التي قد تحمل أسماء مشابهة بالخطأ
+            if (!url.includes('.js') && !url.includes('.css') && !url.includes('.png') && !url.includes('.jpg')) {
+                directStreamUrl = url;
+            }
+        }
+    });
+
     try {
         console.log(`🔎 جاري فتح صفحة الأفلام الرئيسية...`);
         await page.goto(MOVIES_SITE, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // استخراج جميع روابط الأفلام وأسمائها من الصفحة
         const movies = await page.evaluate(() => {
             const items = Array.from(document.querySelectorAll('.Small--Box a.recent--block'));
             return items.map(item => ({
@@ -35,78 +50,75 @@ async function getMovieData() {
             }));
         });
 
-        if (movies.length === 0) throw new Error("لم يتم العثور على أي أفلام في الصفحة، قد يكون الـ Selector تغير.");
+        if (movies.length === 0) throw new Error("لم يتم العثور على أي أفلام في الصفحة الرئيسية.");
 
-        // اختيار فيلم عشوائي
         const randomMovie = movies[Math.floor(Math.random() * movies.length)];
-        // بناء رابط صفحة المشاهدة مباشرة بإضافة /watch/ في النهاية
         const watchUrl = randomMovie.url.endsWith('/') ? `${randomMovie.url}watch/` : `${randomMovie.url}/watch/`;
         
         console.log(`🎬 الفيلم المختار عشوائياً: ${randomMovie.title}`);
         console.log(`🔗 رابط صفحة المشاهدة: ${watchUrl}`);
 
-        // الانتقال لصفحة المشاهدة لاستخراج السيرفر
         await page.goto(watchUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        console.log(`⏳ جاري فحص السيرفرات المتاحة وتجربتها واحداً تلو الآخر...`);
 
-        console.log(`⏳ جاري البحث عن سيرفر متاح (StreamWish أو UpDown)...`);
-        
-        // سنبحث عن سيرفر StreamWish أو UpDown بالضغط عليه ومراقبة الشبكة لجلب رابط الفيديو المباشر
-        // هذه الدالة تراقب روابط البث الإعلانية وروابط الـ m3u8 أو mp4 الناتجة عن المشغلات
-        let directStreamUrl = null;
-
-        // تفعيل ميزة مراقبة طلبات الشبكة للقبض على رابط الفيديو الثمين
-        page.on('response', response => {
-            const url = response.url();
-            // الروابط المباشرة للسيرفرات غالباً تحتوي على .mp4 أو .m3u8 أو تتبع لمجالات البث
-            if (url.includes('.mp4') || url.includes('.m3u8') || url.includes('streamwish') || url.includes('updown')) {
-                // استثناء روابط الـ سكريبتات أو الصور الصغيره
-                if (!url.includes('.js') && !url.includes('.css') && !url.includes('.png')) {
-                    directStreamUrl = url;
-                }
-            }
+        // معرفة عدد السيرفرات الموجودة في القائمة
+        const serverCount = await page.evaluate(() => {
+            return document.querySelectorAll('.watch--servers--list ul li').length;
         });
 
-        // محاكاة الضغط على سيرفر StreamWish (الذي يحتوي نص StreamWish)
-        await page.evaluate(() => {
-            const servers = Array.from(document.querySelectorAll('.watch--servers--list ul li'));
-            // نحاول إيجاد سيرفر StreamWish أولاً لأنه الأسهل في جلب الرابط المباشر
-            const targetServer = servers.find(s => s.innerText.includes('StreamWish') || s.innerText.includes('UpDown') || s.innerText.includes('متعدد'));
-            if (targetServer) {
-                targetServer.click();
-            } else if (servers.length > 0) {
-                servers[0].click(); // إذا لم نجد، نضغط على أول سيرفر متاح
+        console.log(`📊 تم العثور على (${serverCount}) سيرفرات جاهزة للاختبار.`);
+
+        // الدوران على السيرفرات وتجربتها حتى نجد الرابط
+        for (let i = 0; i < serverCount; i++) {
+            if (directStreamUrl) break; // لو وجدنا الرابط من سيرفر سابق نخرج فوراً
+
+            const serverName = await page.evaluate((index) => {
+                const el = document.querySelectorAll('.watch--servers--list ul li')[index];
+                return el ? el.innerText.trim() : `سيرفر ${index + 1}`;
+            }, i);
+
+            console.log(`🔄 جاري تشغيل وتجربة السيرفر رقم [${i + 1}]: ${serverName}...`);
+
+            // الضغط على السيرفر الحالي
+            await page.evaluate((index) => {
+                const el = document.querySelectorAll('.watch--servers--list ul li')[index];
+                if (el) el.click();
+            }, i);
+
+            // الانتظار 8 ثوانٍ لمنح المشغل فرصة لطلب رابط الـ m3u8 من الشبكة
+            await new Promise(r => setTimeout(r, 8000));
+
+            if (directStreamUrl) {
+                console.log(`🎯 نجاح! تم صيد الرابط المباشر من سيرفر: ${serverName}`);
+                break;
             }
-        });
-
-        // انتظر 10 ثوانٍ لكي يقوم المشغل بالتحميل وتلتقط الشبكة الرابط
-        await new Promise(r => setTimeout(r, 10000));
-
-        // إذا لم نلتقطه من الشبكة، نبحث داخل الـ iframe الموجود بالصفحة
-        if (!directStreamUrl) {
-            directStreamUrl = await page.evaluate(() => {
-                const iframe = document.querySelector('.watch-player-box iframe, #video_player iframe');
-                return iframe ? iframe.getAttribute('src') : null;
-            });
         }
 
-        if (!directStreamUrl) throw new Error("لم نتمكن من استخراج الرابط المباشر للمشغل.");
+        // إذا مررنا على كل السيرفرات ولم نجد الرابط، نأخذ لقطة شاشة للمعاينة
+        if (!directStreamUrl) {
+            console.log(`❌ فشلت جميع السيرفرات في إعطاء رابط مباشر. جاري التقاط لقطة شاشة للأعطال...`);
+            await page.screenshot({ path: 'failed-page.png', fullPage: true });
+            throw new Error("لم نتمكن من استخراج الرابط المباشر للمشغل من أي سيرفر.");
+        }
         
-        console.log(`🎯 تم العثور على رابط البث بنجاح!`);
         return { title: randomMovie.title, streamUrl: directStreamUrl };
 
     } catch (e) {
         console.error(`❌ فشل في مرحلة الكشط:`, e.message);
+        // تأكيد أخذ لقطة شاشة في حال حدوث أي خطأ مفاجئ آخر
+        try { await page.screenshot({ path: 'failed-page.png' }); } catch(err){}
         return null;
     } finally {
         await browser.close();
     }
 }
 
-// 2. دالة فحص المدة، اختيار توقيت عشوائي، والقص عبر FFmpeg بالأبعاد المطلوبة وتخطي الحقوق
+// 2. دالة فحص المدة والقص عبر FFmpeg بمقاسات تيك توك وتخطي الحقوق
 function processVideoClip(streamUrl, movieTitle) {
     try {
         console.log(`⏱️ جاري فحص مدة الفيلم الإجمالية عن بُعد عبر ffprobe...`);
         
+        // جلب المدة الإجمالية للبث
         const durationCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nocorrect_header=1:novariable=1 -sexagesimal "${streamUrl}"`;
         const durationStr = execSync(durationCmd, { encoding: 'utf-8' }).trim();
         
@@ -115,27 +127,22 @@ function processVideoClip(streamUrl, movieTitle) {
 
         console.log(`🎬 مدة الفيلم الإجمالية: ${durationStr} (${totalSeconds} ثانية)`);
 
-        // الحسابات: تجنب أول 10 دقائق (600 ثانية) وآخر 10 دقائق
+        // الحسابات لتجنب أول وأخر 10 دقائق
         const minStart = 10 * 60; 
-        const maxStart = totalSeconds - (10 * 60) - 120; // ناقص دقيقتين للقطة
+        const maxStart = totalSeconds - (10 * 60) - 120; 
 
         if (maxStart <= minStart) {
-            console.log("⚠️ الفيلم قصير جداً (قد يكون إعلان أو حلقة قصيرة)، سيتم القص من المنتصف تلقائياً.");
-            return false;
+            console.log("⚠️ الفيلم قصير جداً، سيتم القص من التوقيت الافتراضي (الدقيقة 12).");
         }
 
-        const randomStart = Math.floor(Math.random() * (maxStart - minStart + 1)) + minStart;
+        const randomStart = maxStart > minStart ? Math.floor(Math.random() * (maxStart - minStart + 1)) + minStart : 12 * 60;
         const startTimeStr = new Date(randomStart * 1000).toISOString().substr(11, 8);
         
-        console.log(`✂️ التوقيت العشوائي المختار للقص: ${startTimeStr}`);
-        console.log(`🎨 جاري بدء المعالجة والقص بمقاسات تيك توك وإضافة النصوص الرقمية...`);
+        console.log(`✂️ التوقيت المختار للقص: ${startTimeStr}`);
+        console.log(`🎨 جاري بدء المعالجة والقص الفوري...`);
 
-        // فلتر الـ FFmpeg الخارق:
-        // 1. القفز للتوقيت وقص دقيقتين (-ss و -t)
-        // 2. الفلتر المرئي (vf): تحويل الأبعاد لعمودي، تكبير خفيف (1.02) لتفادي الحقوق، تباين وإضاءة خفيفة، ثم طباعة النصوص
-        // 3. الفلتر الصوتي (af): تسريع الصوت بنسبة 1.05 لتغيير البصمة الصوتية وتفادي الحقوق الرقمية
-        
-        const ffmpegCmd = `ffmpeg -ss ${startTimeStr} -i "${streamUrl}" -t 00:02:00 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setpts=0.95*PTS,scale=iw*1.02:ih*1.02,crop=iw/1.02:ih/1.02,eq=brightness=0.03:contrast=1.05,drawtext=text='${movieTitle}':fontcolor=white:fontsize=45:x=(w-text_w)/2:y=250,drawtext=text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=38:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 22 -af "atempo=1.05" -y ${CONFIG.outputVideo}`;
+        // أمر الـ FFmpeg المعدل لتركيب الفيديو عمودياً + التعديلات المضادة للحقوق الرقمية وضبط مسار الخط العربي في لينكس
+        const ffmpegCmd = `ffmpeg -ss ${startTimeStr} -i "${streamUrl}" -t 00:02:00 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setpts=0.95*PTS,scale=iw*1.02:ih*1.02,crop=iw/1.02:ih/1.02,eq=brightness=0.03:contrast=1.05,drawtext=fontfile=/usr/share/fonts/truetype/kacst/KacstBook.ttf:text='${movieTitle}':fontcolor=white:fontsize=45:x=(w-text_w)/2:y=250,drawtext=fontfile=/usr/share/fonts/truetype/kacst/KacstBook.ttf:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=35:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -c:a aac -af "atempo=1.05" -y ${CONFIG.outputVideo}`;
 
         execSync(ffmpegCmd, { stdio: 'inherit' });
         
@@ -148,19 +155,23 @@ function processVideoClip(streamUrl, movieTitle) {
     }
 }
 
-// المشغل الرئيسي للاختبار
+// المحرك الرئيسي
 (async () => {
-    console.log("🚀 بدء تشغيل سكريبت الاختبار الخاص بالأفلام...");
+    console.log("🚀 بدء تشغيل سكريبت الأفلام المحدث...");
     
+    // جلب فيلم عشوائي وتجربة السيرفرات
     const movieData = await getMovieData();
     
     if (movieData && movieData.streamUrl) {
-        console.log(`\n🍿 اسم الفيلم المستخرج: ${movieData.title}`);
+        console.log(`\n🍿 اسم الفيلم: ${movieData.title}`);
+        console.log(`🔗 رابط البث المستهدف: ${movieData.streamUrl}`);
+        
+        // معالجة اللقطة وقصها
         const success = processVideoClip(movieData.streamUrl, movieData.title);
         if (success) {
-            console.log("\n✨ انتهى الاختبار بنجاح! يمكنك الآن فتح ملف 'tiktok_ready.mp4' ومشاهدة النتيجة بنفسك.");
+            console.log("\n✨ انتهت معالجة الفيديو بنجاح وجاهز للرفع التلقائي مستقبلاً!");
         }
     } else {
-        console.log("\n❌ فشل السكريبت في الحصول على بيانات كافية للفيلم.");
+        console.log("\n❌ انتهى السكريبت بالفشل في الحصول على رابط بث.");
     }
 })();
