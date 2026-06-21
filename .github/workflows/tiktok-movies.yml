@@ -1,0 +1,65 @@
+name: TikTok Movies Auto Post
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # يعمل تلقائياً كل 4 ساعات (6 مرات في اليوم) لضمان أمان الحساب
+  workflow_dispatch: # زر التشغيل اليدوي للتجربة في أي وقت
+
+permissions:
+  contents: write
+
+jobs:
+  movie_post_job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install System Tools & Arabic Fonts
+        run: |
+          sudo apt-get update
+          # تثبيت أدوات الميديا والخطوط لدعم الكتابة باللغة العربية على الفيديو
+          sudo apt-get install -y ffmpeg python3-pip curl fonts-nakula fonts-dejavufonts-liberation
+          pip3 install --upgrade yt-dlp requests Brotli
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+
+      - name: Install NPM Packages
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: |
+          npm install puppeteer-extra puppeteer-extra-plugin-stealth puppeteer
+          npx puppeteer browsers install chrome
+
+      - name: Run Movies Processor & Uploader
+        env:
+          TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
+        # تشغيل السكريبت الأساسي (تأكد أن اسم الملف يتطابق مع الملف لديك، مثل upload.js)
+        run: node upload.js
+
+      - name: Save Upload History (Prevent Duplicates)
+        if: success()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if [ ! -f history.json ]; then echo '{"posted":[]}' > history.json; fi
+          git add history.json
+          git commit -m "Update movie post history [skip ci]" || echo "No changes to history"
+          git push origin main
+
+      - name: Upload Screenshots & Videos for Debugging
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-artifacts
+          # سيقوم بحفظ لقطات الشاشة في حال فشل الرفع، أو إذا كنت تريد فحص الفيديو الناتج
+          path: |
+            *.png
+            tiktok_ready.mp4
+          retention-days: 3
