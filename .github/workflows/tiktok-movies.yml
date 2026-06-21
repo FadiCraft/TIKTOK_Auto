@@ -24,8 +24,8 @@ jobs:
       - name: Install System Tools & Arabic Fonts
         run: |
           sudo apt-get update
-          # تثبيت أدوات الميديا والخطوط لدعم الكتابة باللغة العربية على الفيديو
-          sudo apt-get install -y ffmpeg python3-pip curl fonts-nakula fonts-dejavufonts-liberation
+          # تثبيت أدوات الميديا والخطوط الرسمية لدعم الكتابة باللغة العربية بشكل صحيح
+          sudo apt-get install -y ffmpeg python3-pip curl fonts-dejavu fonts-liberation fonts-kacst fonts-freefont-ttf
           pip3 install --upgrade yt-dlp requests Brotli
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
@@ -40,7 +40,6 @@ jobs:
       - name: Run Movies Processor & Uploader
         env:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
-        # تشغيل السكريبت الأساسي (تأكد أن اسم الملف يتطابق مع الملف لديك، مثل upload.js)
         run: node upload.js
 
       - name: Save Upload History (Prevent Duplicates)
@@ -58,7 +57,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: debug-artifacts
-          # سيقوم بحفظ لقطات الشاشة في حال فشل الرفع، أو إذا كنت تريد فحص الفيديو الناتج
           path: |
             *.png
             tiktok_ready.mp4
