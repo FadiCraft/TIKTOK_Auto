@@ -27,10 +27,18 @@ jobs:
         run: |
           xvfb-run --server-args="-screen 0 1080x1920x24" node upload.js
 
-      # 🔴 هذه هي الخطوة السحرية التي ستحفظ لك الصور 🔴
+      # 🔴 خطوة رفع الصور (للتشخيص إذا احتجتها)
       - name: Upload Screenshots for Diagnostics
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: bot-screenshots
           path: ./screenshots/
+
+      # 🎬 خطوة رفع الفيديو النهائي المجهز للتيك توك
+      - name: Upload TikTok Video Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tiktok-movie-video
+          path: tiktok_ready.mp4
