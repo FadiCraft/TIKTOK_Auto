@@ -66,7 +66,6 @@ async function startScreenCapture() {
         if (movies.length === 0) throw new Error("لم يتم العثور على أفلام.");
         const randomMovie = movies[Math.floor(Math.random() * movies.length)];
         
-        // بناء رابط التضمين المباشر
         const embedUrl = randomMovie.url.endsWith('/') ? `${randomMovie.url}?embedScreen=true` : `${randomMovie.url}/?embedScreen=true`;
         
         console.log(`🎬 الفيلم المختار: ${randomMovie.title}`);
@@ -74,34 +73,32 @@ async function startScreenCapture() {
         
         await page.goto(embedUrl, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // انتظار كافٍ (15 ثانية) لضمان تحميل صفحة التضمين بالكامل بما فيها الـ iframe الداخلي
         console.log("⏳ انتظار اكتمال تحميل عناصر المشغل والـ iframe بالكامل...");
         await new Promise(r => setTimeout(r, 15000));
 
-        // 🔴 تجاوز حظر الـ Cross-Origin بنقرة ماوس إحداثية حرة ومباشرة في منتصف الشاشة الافتراضية تماماً
-        console.log(`🖱️ 3. جاري إرسال نقرة ماوس حرة في منتصف الشاشة لتشغيل الفيديو وتخطي الحماية...`);
+        console.log(`鼠标 3. جاري إرسال نقرة ماوس حرة في منتصف الشاشة لتشغيل الفيديو وتخطي الحماية...`);
         await page.mouse.click(540, 960); 
 
-        // انتظر 5 ثوانٍ لنتأكد أن الفيديو بدأ بثه الفعلي واختفت واجهات التشغيل
         await new Promise(r => setTimeout(r, 5000));
 
+        // 🔴 [تعديل مهم] تم إزالة خيارات الصوت لتجنب انهيار الـ FFmpeg في السيرفرات الوهمية
         console.log(`🎥 🔴 4. جاري تسجيل الشاشة الافتراضية فيديو الآن (لمدة 60 ثانية)...`);
-        const recordCmd = `ffmpeg -f x11grab -video_size 1080x1920 -i ${currentDisplay} -f pulse -i default -t 60 -c:v libx264 -pix_fmt yuv420p -y ${CONFIG.rawCapture}`;
+        const recordCmd = `ffmpeg -f x11grab -video_size 1080x1920 -i ${currentDisplay} -t 60 -c:v libx264 -pix_fmt yuv420p -y ${CONFIG.rawCapture}`;
         
         execSync(recordCmd, { env: process.env, stdio: 'inherit' });
         
         console.log(`🛑 تم الانتهاء من تسجيل المقطع بنجاح.`);
         await browser.close();
 
-        // معالجة الفيديو النهائي وإضافة العناوين بخط القاهرة العربي
         console.log(`🎨 5. جاري معالجة الفيديو وطباعة العناوين التسويقية...`);
-        const filterCmd = `ffmpeg -i ${CONFIG.rawCapture} -vf "setpts=0.95*PTS,eq=brightness=0.03:contrast=1.05,drawtext=fontfile=${CONFIG.fontPath}:text='${randomMovie.title}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=250,drawtext=fontfile=${CONFIG.fontPath}:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=32:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -c:a aac -af "atempo=1.05" -y ${CONFIG.outputVideo}`;
+        // تم إزالة تعديلات الصوت من فلتر الـ FFmpeg النهائي أيضاً ليعمل بنجاح
+        const filterCmd = `ffmpeg -i ${CONFIG.rawCapture} -vf "setpts=0.95*PTS,eq=brightness=0.03:contrast=1.05,drawtext=fontfile=${CONFIG.fontPath}:text='${randomMovie.title}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=250,drawtext=fontfile=${CONFIG.fontPath}:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=32:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -y ${CONFIG.outputVideo}`;
         
         execSync(filterCmd, { env: process.env, stdio: 'inherit' });
         
         if (fs.existsSync(CONFIG.rawCapture)) fs.unlinkSync(CONFIG.rawCapture);
 
-        console.log(`🚀 نجاح باهر! فيديو المقطع السينمائي جاهز ومسجل بالكامل: ${CONFIG.outputVideo}`);
+        console.log(`🚀 نجاح باهر! فيديو المقطع السينمائي جاهز ومسجل بالكامل بدون أخطاء: ${CONFIG.outputVideo}`);
         return true;
 
     } catch (e) {
