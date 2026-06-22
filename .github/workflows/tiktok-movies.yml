@@ -1,19 +1,13 @@
-name: TikTok Movies Screen Recorder
+name: Run TikTok Movie Bot
 
 on:
-  schedule:
-    - cron: '0 */4 * * *'  # يعمل تلقائياً كل 4 ساعات
-  workflow_dispatch: # زر التشغيل اليدوي
-
-permissions:
-  contents: write
+  workflow_dispatch:
 
 jobs:
-  movie_record_job:
+  run-bot:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -21,44 +15,22 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install System Tools, Xvfb & Arabic Fonts
+      - name: Install Dependencies
         run: |
+          npm install
           sudo apt-get update
-          # تثبيت خادم الشاشة الافتراضية xvfb وأدوات الصوت لتصوير داخلي آمن
-          sudo apt-get install -y ffmpeg xvfb xdotool pulseaudio fonts-kacst fonts-dejavu
-          # تهيئة كرت الصوت الافتراضي لكي يلتقط الميكروفون الداخلي صوت الفيلم
-          pulseaudio -D --exit-idle-time=-1 || true
+          sudo apt-get install -y xvfb ffmpeg
 
-      - name: Install NPM Packages
-        env:
-          PUPPETEER_SKIP_DOWNLOAD: 'true'
-        run: |
-          npm install puppeteer-extra puppeteer-extra-plugin-stealth puppeteer
-          npx puppeteer browsers install chrome
-
-      - name: Run Recorder (Inside Virtual Screen)
+      - name: Run Bot and Capture
         env:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
-        # تشغيل المتصفح والـ FFmpeg معاً داخل الشاشة الوهمية بمقاسات عمودية جاهزة
         run: |
           xvfb-run --server-args="-screen 0 1080x1920x24" node upload.js
 
-      - name: Save Upload History (Prevent Duplicates)
-        if: success()
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          if [ ! -f history.json ]; then echo '{"posted":[]}' > history.json; fi
-          git add history.json
-          git commit -m "Update movie post history [skip ci]" || echo "No changes to history"
-          git push origin main
-
-      - name: Upload Recorded Video & Debug Artifacts
-        if: always()
+      # 🔴 هذه هي الخطوة السحرية التي ستحفظ لك الصور 🔴
+      - name: Upload Screenshots for Diagnostics
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: debug-artifacts
-          path: |
-            *.png
-            tiktok_ready.mp4
-          retention-days: 3
+          name: bot-screenshots
+          path: ./screenshots/
