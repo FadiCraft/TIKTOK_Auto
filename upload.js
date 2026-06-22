@@ -1,6 +1,6 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const { exec } = require('child_process'); // تم استخدام exec غير الحاصر ليعمل الفيدو بالتوازي
+const { PuppeteerScreenRecorder } = require('puppeteer-screen-recorder');
 const fs = require('fs');
 
 puppeteer.use(StealthPlugin());
@@ -30,44 +30,37 @@ function downloadArabicFont() {
 
 async function startScreenCapture() {
     downloadArabicFont();
-    const currentDisplay = process.env.DISPLAY || ':99';
-    console.log(`🖥️ الشاشة الافتراضية المعتمدة: ${currentDisplay}`);
 
-    // 🎥 🔴 [تحديث جوهري]: تشغيل الـ FFmpeg فوراً في الخلفية لتصوير كل شيء من البداية
-    console.log(`🎥 🔴 جاري بدء تسجيل الشاشة الشامل لتوثيق العملية بالكامل من أول ثانية...`);
-    const recordCmd = `ffmpeg -f x11grab -video_size 1080x1920 -i ${currentDisplay} -t 75 -c:v libx264 -pix_fmt yuv420p -y ${CONFIG.rawCapture}`;
-    
-    // تشغيل التسجيل كـ Background Process حتى لا يعطل بقية كود الـ Puppeteer
-    const ffmpegProcess = exec(recordCmd, { env: process.env });
-    ffmpegProcess.stdout.on('data', (data) => {}); 
-    ffmpegProcess.stderr.on('data', (data) => {});
-
-    // انتظار ثانيتين للتأكد من أن الـ FFmpeg بدأ التسجيل فعلياً
-    await new Promise(r => setTimeout(r, 2000));
-
+    // تشغيل المتصفح بإعدادات تتوافق تماماً مع البيئة الوهمية
     const browser = await puppeteer.launch({
-        headless: false, 
+        headless: "new", // تم التغيير لـ "new" لضمان استقرار الأداء ومنع انهيار كرت الشاشة الافتراضي
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--window-size=1080,1920',
-            '--start-fullscreen',
             '--autoplay-policy=no-user-gesture-required',
             '--disable-web-security',
             '--allow-running-insecure-content',
-            '--disable-blink-features=AutomationControlled' // لتخطي حجب الحماية وسيرفرات الفيديو
+            '--disable-blink-features=AutomationControlled'
         ]
     });
     
     const page = await browser.newPage();
-    
-    // إخفاء الـ WebDriver لئلا تكتشفنا السيرفرات وتظهر رسالة Video Error
-    await page.evaluateOnNewDocument(() => {
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
-
     await page.setUserAgent(CONFIG.userAgent);
     await page.setViewport({ width: 1080, height: 1920 });
+
+    // 🎥 إعداد مسجل الشاشة المدمج لتصوير كافة تفاصيل الأتمتة
+    const recorderConfig = {
+        followNewTab: true,
+        fps: 25,
+        ffmpeg_Path: null, // سيقوم تلقائياً باكتشاف FFmpeg المثبت في النظام
+        videoFrame: { width: 1080, height: 1920 }
+    };
+    
+    const recorder = new PuppeteerScreenRecorder(page, recorderConfig);
+    
+    console.log(`🎥 🔴 تم بدء تسجيل الفيديو الشامل للعملية منذ هذه اللحظة...`);
+    await recorder.start(CONFIG.rawCapture);
 
     try {
         console.log(`🔎 1. جاري فتح صفحة الأفلام الرئيسية...`);
@@ -90,42 +83,42 @@ async function startScreenCapture() {
         console.log(`🚀 2. جاري الانتقال إلى رابط التضمين والمشاهدة الحية...`);
         await page.goto(embedUrl, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        console.log("⏳ انتهاء تحميل الصفحة، جاري الانتظار والتفاعل لتخطي الـ Block وسرقة النقرة...");
-        await new Promise(r => setTimeout(r, 12000));
+        console.log("⏳ انتهاء تحميل صفحة الفيلم، جاري الانتظار والتفاعل...");
+        await new Promise(r => setTimeout(r, 10000));
 
-        // محاكاة حركة الماوس الحرة والنقر لتشغيل الفيديو
-        console.log(`🖱️ 3. جاري إرسال نقرة ماوس في منتصف المشغل...`);
+        console.log(` Baltic 🖱️ 3. جاري إرسال نقرة ماوس لتشغيل المشغل...`);
         await page.mouse.move(540, 960);
         await page.mouse.down();
         await page.mouse.up();
 
-        console.log("⏳ جاري ترك الفيديو يشتغل الآن أمام الكاميرا لمدة 40 ثانية كاملة لتوثيقه...");
-        await new Promise(r => setTimeout(r, 40000));
+        console.log("⏳ ترك الصفحة تعمل أمام الكاميرا لمدة 30 ثانية لتوثيق التحميل والمشغل...");
+        await new Promise(r => setTimeout(r, 30000));
 
-        console.log(`🛑 تم الانتهاء من فترة المشاهدة الافتراضية بنجاح.`);
+        console.log(`🛑 إيقاف تسجيل الفيديو وإغلاق المتصفح آمنًا...`);
+        await recorder.stop();
         await browser.close();
 
-        // الانتظار قليلاً للتأكد من قيام FFmpeg بإغلاق وكتابة الملف بشكل سليم
-        await new Promise(r => setTimeout(r, 5000));
-
-        console.log(`🎨 5. جاري معالجة الفيديو النهائي وإضافة العناوين...`);
+        // معالجة وإضافة النصوص فوق الفيديو الملتقط بنجاح
+        console.log(`🎨 5. جاري إضافة العناوين والنصوص على الفيديو النهائي...`);
         const { execSync } = require('child_process');
-        const filterCmd = `ffmpeg -i ${CONFIG.rawCapture} -vf "eq=brightness=0.02:contrast=1.03,drawtext=fontfile=${CONFIG.fontPath}:text='${randomMovie.title}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=250,drawtext=fontfile=${CONFIG.fontPath}:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=32:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -y ${CONFIG.outputVideo}`;
+        const filterCmd = `ffmpeg -i ${CONFIG.rawCapture} -vf "drawtext=fontfile=${CONFIG.fontPath}:text='${randomMovie.title}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=250,drawtext=fontfile=${CONFIG.fontPath}:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=32:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -y ${CONFIG.outputVideo}`;
         
         execSync(filterCmd, { env: process.env, stdio: 'inherit' });
         
         if (fs.existsSync(CONFIG.rawCapture)) fs.unlinkSync(CONFIG.rawCapture);
 
-        console.log(`🚀 تم إنتاج الفيديو التوثيقي الشامل بنجاح: ${CONFIG.outputVideo}`);
+        console.log(`🚀 انتهى العمل بنجاح! تم حفظ الفيديو الشامل في: ${CONFIG.outputVideo}`);
         return true;
 
     } catch (e) {
-        console.error(`❌ خطأ أثناء تشغيل وتصوير الفيديو:`, e.message);
+        console.error(`❌ حدث خطأ أثناء تشغيل وتصوير الفيديو:`, e.message);
+        try { await recorder.stop(); } catch(err){}
         await browser.close();
         return false;
     }
 }
 
 (async () => {
+    // تأكد من تثبيت الحزمة أولاً عبر إطلاق الأمر: npm install puppeteer-screen-recorder
     await startScreenCapture();
 })();
