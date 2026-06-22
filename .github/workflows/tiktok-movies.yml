@@ -1,4 +1,4 @@
-name: TikTok Movies Auto Post
+name: TikTok Movies Screen Recorder
 
 on:
   schedule:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  movie_post_job:
+  movie_record_job:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,13 +21,13 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install System Tools & Arabic Fonts
+      - name: Install System Tools, Xvfb & Arabic Fonts
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg python3-pip curl fonts-dejavu fonts-liberation fonts-kacst fonts-freefont-ttf
-          pip3 install --upgrade yt-dlp requests Brotli
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
+          # تثبيت خادم الشاشة الافتراضية xvfb وأدوات الصوت لتصوير داخلي آمن
+          sudo apt-get install -y ffmpeg xvfb xdotool pulseaudio fonts-kacst fonts-dejavu
+          # تهيئة كرت الصوت الافتراضي لكي يلتقط الميكروفون الداخلي صوت الفيلم
+          pulseaudio -D --exit-idle-time=-1 || true
 
       - name: Install NPM Packages
         env:
@@ -36,10 +36,12 @@ jobs:
           npm install puppeteer-extra puppeteer-extra-plugin-stealth puppeteer
           npx puppeteer browsers install chrome
 
-      - name: Run Movies Processor & Uploader
+      - name: Run Recorder (Inside Virtual Screen)
         env:
           TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
-        run: node upload.js
+        # تشغيل المتصفح والـ FFmpeg معاً داخل الشاشة الوهمية بمقاسات عمودية جاهزة
+        run: |
+          xvfb-run --server-args="-screen 0 1080x1920x24" node upload.js
 
       - name: Save Upload History (Prevent Duplicates)
         if: success()
@@ -51,7 +53,7 @@ jobs:
           git commit -m "Update movie post history [skip ci]" || echo "No changes to history"
           git push origin main
 
-      - name: Upload Screenshots & Videos for Debugging
+      - name: Upload Recorded Video & Debug Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
