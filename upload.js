@@ -14,8 +14,12 @@ const CONFIG = {
 };
 
 async function startScreenCapture() {
+    // جلب رقم الشاشة الافتراضية الديناميكي من السيرفر (مثل :99 أو غيره)
+    const currentDisplay = process.env.DISPLAY || ':0.0';
+    console.log(`🖥️ الشاشة الافتراضية المكتشفة حالياً: ${currentDisplay}`);
+
     const browser = await puppeteer.launch({
-        headless: false, // يجب أن يكون false داخل xvfb
+        headless: false, 
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -74,19 +78,18 @@ async function startScreenCapture() {
         });
 
         await new Promise(r => setTimeout(r, 3000));
-        console.log(`🎥 🔴 جاري تسجيل الشاشة الافتراضية (لمدة 60 ثانية)...`);
+        console.log(`🎥 🔴 جاري تسجيل الشاشة الافتراضية ${currentDisplay} (لمدة 60 ثانية)...`);
 
-        // أمر الـ FFmpeg محدث ليلتزم ببيئة خادم الشاشة الشغالة حالياً بشكل متزامن
-        const recordCmd = `ffmpeg -f x11grab -video_size 1080x1920 -i :0.0 -f pulse -i default -t 60 -c:v libx264 -pix_fmt yuv420p -y ${CONFIG.rawCapture}`;
+        // تم استبدال :0.0 بالمتغير الديناميكي currentDisplay لمنع خطأ فتح الـ Display
+        const recordCmd = `ffmpeg -f x11grab -video_size 1080x1920 -i ${currentDisplay} -f pulse -i default -t 60 -c:v libx264 -pix_fmt yuv420p -y ${CONFIG.rawCapture}`;
         
-        // تشغيل الأمر مع تمرير البيئة الحالية لـ Linux
         execSync(recordCmd, { env: process.env, stdio: 'inherit' });
         
         console.log(`🛑 تم الانتهاء من تسجيل المقطع الخام بنجاح.`);
         await browser.close();
 
         // مرحلة المعالجة والفلترة وإضافة النصوص والخطوط
-        console.log(`🎨 جاري معالجة الفيديو النهائي وإضافة النصوص الترويجية الخارقة...`);
+        console.log(`🎨 جاري معالجة الفيديو النهائي وإضافة النصوص الترويجية...`);
         const filterCmd = `ffmpeg -i ${CONFIG.rawCapture} -vf "setpts=0.95*PTS,eq=brightness=0.03:contrast=1.05,drawtext=fontfile=/usr/share/fonts/truetype/kacst/KacstBook.ttf:text='${randomMovie.title}':fontcolor=white:fontsize=45:x=(w-text_w)/2:y=250,drawtext=fontfile=/usr/share/fonts/truetype/kacst/KacstBook.ttf:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=35:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -c:a aac -af "atempo=1.05" -y ${CONFIG.outputVideo}`;
         
         execSync(filterCmd, { env: process.env, stdio: 'inherit' });
