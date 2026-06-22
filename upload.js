@@ -14,13 +14,23 @@ const CONFIG = {
     fontPath: '/tmp/Cairo-Bold.ttf'
 };
 
-async function diagnosticRun() {
-    console.log("🛠️ بدء تشغيل سكريبت التشخيص وتصوير المراحل خطوة بخطوة...");
-    
-    // تأكد من وجود المجلد لحفظ الصور
-    if (!fs.existsSync('./screenshots')) {
-        fs.mkdirSync('./screenshots');
+function downloadArabicFont() {
+    if (!fs.existsSync(CONFIG.fontPath)) {
+        console.log("📥 جاري تحميل الخط العربي لضمان وضوح النصوص...");
+        try {
+            execSync(`curl -L -s "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo%5Bwght%5D.ttf" -o ${CONFIG.fontPath}`);
+            console.log("✅ تم تحميل الخط بنجاح.");
+        } catch (e) {
+            console.log("⚠️ فشل تحميل خط Cairo، سيتم استخدام الخط الافتراضي.");
+            CONFIG.fontPath = '/usr/share/fonts/truetype/kacst/KacstBook.ttf';
+        }
     }
+}
+
+async function startScreenCapture() {
+    downloadArabicFont();
+    const currentDisplay = process.env.DISPLAY || ':99';
+    console.log(`🖥️ الشاشة الافتراضية المعتمدة: ${currentDisplay}`);
 
     const browser = await puppeteer.launch({
         headless: false, 
@@ -29,7 +39,13 @@ async function diagnosticRun() {
             '--disable-setuid-sandbox',
             '--window-size=1080,1920',
             '--start-fullscreen',
-            '--autoplay-policy=no-user-gesture-required'
+            '--autoplay-policy=no-user-gesture-required',
+            // 🔴 الإعدادات السحرية لمنع انهيار الـ JW Player وحل خطأ RC2USRC والصفحة البيضاء:
+            '--use-gl=angle',
+            '--use-angle=swiftshader',
+            '--disable-gpu-program-cache',
+            '--disable-web-security',
+            '--allow-running-insecure-content'
         ]
     });
     const page = await browser.newPage();
@@ -37,13 +53,9 @@ async function diagnosticRun() {
     await page.setViewport({ width: 1080, height: 1920 });
 
     try {
-        // المرحلة 1: فتح الموقع الرئيسي لاختيار فيلم
-        console.log(`🔎 1. جاري فتح صفحة الأفلام الرئيسية...`);
+        console.log(`🔎 1. جاري فتح صفحة الأفلام الرئيسية لاختيار فيلم...`);
         await page.goto(MOVIES_SITE, { waitUntil: 'networkidle2', timeout: 60000 });
-        await page.screenshot({ path: './screenshots/step1_main_site.png' });
-        console.log("📸 تم حفظ صورة المرحلة 1: الصفحة الرئيسية.");
 
-        // كشط واختيار فيلم عشوائي
         const movies = await page.evaluate(() => {
             const items = Array.from(document.querySelectorAll('.Small--Box a.recent--block'));
             return items.map(item => ({
@@ -55,43 +67,63 @@ async function diagnosticRun() {
         if (movies.length === 0) throw new Error("لم يتم العثور على أفلام.");
         const randomMovie = movies[Math.floor(Math.random() * movies.length)];
         
-        // بناء رابط التضمين بناءً على اكتشافك
+        // بناء رابط التضمين السحري الذكي الخاص بك
         const embedUrl = randomMovie.url.endsWith('/') ? `${randomMovie.url}?embedScreen=true` : `${randomMovie.url}/?embedScreen=true`;
         
         console.log(`🎬 الفيلم المختار: ${randomMovie.title}`);
-        console.log(`🚀 2. جاري الانتقال مباشرة إلى رابط التضمين السحري: ${embedUrl}`);
-
-        // المرحلة 2: فتح رابط التضمين وقبل التشغيل
-        console.log(`🔗 2. جاري فتح رابط التضمين...`);
-        await page.goto(embedUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-        await page.screenshot({ path: './screenshots/step2_embed_url.png' });
-        console.log("📸 تم حفظ صورة المرحلة 2: بعد فتح رابط التضمين.");
-
-        // المرحلة 3: انتظار تحميل المشغل بالكامل
-        console.log(`⏳ 3. انتظار تحميل المشغل...`);
-        await new Promise(r => setTimeout(r, 10000));
-        await page.screenshot({ path: './screenshots/step3_after_wait.png' });
-        console.log("📸 تم حفظ صورة المرحلة 3: بعد انتظار تحميل المشغل.");
-
-        // المرحلة 4: محاولة الضغط في منتصف الشاشة للتشغيل
-        console.log(`🖱️ 4. جاري إرسال نقرة تشغيل للمشغل...`);
-        await page.mouse.click(540, 960); 
-        await page.screenshot({ path: './screenshots/step4_after_click.png' });
-        console.log("📸 تم حفظ صورة المرحلة 4: بعد نقرة التشغيل.");
-
-        // المرحلة 5: الحالة النهائية بعد النقرة
-        await new Promise(r => setTimeout(r, 5000));
-        await page.screenshot({ path: './screenshots/step5_final_diagnostic.png' });
-        console.log("📸 تم حفظ صورة المرحلة 5: الحالة النهائية للمشغل.");
-
-        console.log("\n🚀 انتهت عملية التشخيص وحفظ الصور بنجاح كامل.");
+        console.log(`🚀 2. جاري الانتقال مباشرة إلى رابط التضمين: ${embedUrl}`);
         
-    } catch (e) {
-        console.error(`❌ حدث خطأ غير متوقع أثناء التشخيص:`, e.message);
-        await page.screenshot({ path: './screenshots/diagnostic_error.png' });
-    } finally {
+        await page.goto(embedUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+
+        // انتظار تحميل عناصر المشغل والـ JW Player في الخلفية
+        await new Promise(r => setTimeout(r, 12000));
+
+        // 🔴 الضغط المباشر على كود عنصر التشغيل (JW Play Button) الذي استخرجته أنت
+        console.log(`🖱️ 3. جاري استهداف واقتناص زر تشغيل الـ JW Player برمجياً...`);
+        await page.evaluate(() => {
+            const playBtn = document.querySelector('.jw-display-icon-container, .jw-icon-display, .jw-svg-icon-play');
+            if (playBtn) {
+                playBtn.click();
+                console.log("✅ تم النقر على زر التشغيل بنجاح.");
+            } else {
+                // حل بديل في حال وجود المشغل داخل iframe داخلي
+                const iframe = document.querySelector('iframe');
+                if (iframe) {
+                    iframe.contentWindow.document.querySelector('.jw-icon-display')?.click();
+                }
+            }
+        });
+
+        // انتظر 5 ثوانٍ ليتأكد البوت من اختفاء الواجهات وبدء العرض الفعلي للفيلم
+        await new Promise(r => setTimeout(r, 5000));
+
+        console.log(`🎥 🔴 4. جاري تسجيل الشاشة الآن صوت وصورة (لمدة 60 ثانية بالضبط)...`);
+        const recordCmd = `ffmpeg -f x11grab -video_size 1080x1920 -i ${currentDisplay} -f pulse -i default -t 60 -c:v libx264 -pix_fmt yuv420p -y ${CONFIG.rawCapture}`;
+        
+        execSync(recordCmd, { env: process.env, stdio: 'inherit' });
+        
+        console.log(`🛑 تم الانتهاء من التسجيل السينمائي بنجاح.`);
         await browser.close();
+
+        // طباعة النصوص العربية بخط القاهرة الفاخر وبدون أي مربعات مشوهة
+        console.log(`🎨 5. جاري دمج النصوص التسويقية وتجهيز ملف تيك توك النهائي...`);
+        const filterCmd = `ffmpeg -i ${CONFIG.rawCapture} -vf "setpts=0.95*PTS,eq=brightness=0.03:contrast=1.05,drawtext=fontfile=${CONFIG.fontPath}:text='${randomMovie.title}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=250,drawtext=fontfile=${CONFIG.fontPath}:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=32:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -c:a aac -af "atempo=1.05" -y ${CONFIG.outputVideo}`;
+        
+        execSync(filterCmd, { env: process.env, stdio: 'inherit' });
+        
+        if (fs.existsSync(CONFIG.rawCapture)) fs.unlinkSync(CONFIG.rawCapture);
+
+        console.log(`🚀 نجاح باهر! الفيديو جاهز للرفع الآن بدقة كاملة: ${CONFIG.outputVideo}`);
+        return true;
+
+    } catch (e) {
+        console.error(`❌ خطأ أثناء معالجة تشغيل المشغل:`, e.message);
+        try { await page.screenshot({ path: 'final_error.png' }); } catch(err){}
+        await browser.close();
+        return false;
     }
 }
 
-diagnosticRun();
+(async () => {
+    await startScreenCapture();
+})();
