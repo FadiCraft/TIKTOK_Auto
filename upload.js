@@ -14,7 +14,26 @@ const CONFIG = {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 };
 
-// 1. دالة كشط موقع الأفلام واختيار فيلم وتجربة السيرفرات
+// دالة سريعة للتأكد من أن الرابط المستخرج مستجيب ولا يعطي حظر 403
+function checkLinkResponse(url, referer) {
+    try {
+        console.log(`📡 جاري اختبار الرابط وصلاحيته للتحميل...`);
+        // استخدام curl لفحص الهيدرز فقط وتجنب تحميل الملف بالكامل لسرعة الفحص
+        const cmd = `curl -I -s -A "${CONFIG.userAgent}" -e "${referer}" --max-time 5 "${url}"`;
+        const output = execSync(cmd, { encoding: 'utf-8' });
+        
+        if (output.includes("403") || output.includes("400") || output.includes("401")) {
+            console.log(`⚠️ الرابط مرفوض من السيرفر (حماية أو حظر الوصول).`);
+            return false;
+        }
+        console.log(`✅ الرابط مستجيب وجاهز للمعالجة.`);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// 1. دالة كشط موقع الأفلام واختيار فيلم وتجربة السيرفرات بالتتابع
 async function getMovieData() {
     const browser = await puppeteer.launch({
         headless: "new",
@@ -23,13 +42,14 @@ async function getMovieData() {
     const page = await browser.newPage();
     await page.setUserAgent(CONFIG.userAgent);
 
-    let directStreamUrl = null;
+    let caughtUrl = null;
 
+    // مراقبة مستمرة للشبكة
     page.on('response', response => {
         const url = response.url();
         if (url.includes('master.m3u8') || url.includes('.m3u8') || url.includes('.mp4')) {
             if (!url.includes('.js') && !url.includes('.css') && !url.includes('.png') && !url.includes('.jpg')) {
-                directStreamUrl = url;
+                caughtUrl = url;
             }
         }
     });
@@ -63,8 +83,10 @@ async function getMovieData() {
 
         console.log(`📊 تم العثور على (${serverCount}) سيرفرات جاهزة للاختبار.`);
 
+        let validStreamUrl = null;
+
         for (let i = 0; i < serverCount; i++) {
-            if (directStreamUrl) break;
+            caughtUrl = null; // تصفير الرابط الملتقط قبل تجربة السيرفر الجديد
 
             const serverName = await page.evaluate((index) => {
                 const el = document.querySelectorAll('.watch--servers--list ul li')[index];
@@ -78,21 +100,30 @@ async function getMovieData() {
                 if (el) el.click();
             }, i);
 
+            // انتظار 8 ثوانٍ لالتقاط الرابط من الشبكة
             await new Promise(r => setTimeout(r, 8000));
 
-            if (directStreamUrl) {
-                console.log(`🎯 نجاح! تم صيد الرابط المباشر من سيرفر: ${serverName}`);
-                break;
+            if (caughtUrl) {
+                console.log(`🎯 تم التقاط رابط من سيرفر: ${serverName}. جاري التحقق من الحماية...`);
+                const isAccessible = checkLinkResponse(caughtUrl, watchUrl);
+                
+                if (isAccessible) {
+                    validStreamUrl = caughtUrl;
+                    console.log(`🌟 اعتمدنا السيرفر: ${serverName}`);
+                    break;
+                } else {
+                    console.log(`❌ تخطي السيرفر ${serverName} بسبب قيود الحماية (403). جاري تجربة سيرفر آخر...`);
+                }
             }
         }
 
-        if (!directStreamUrl) {
-            console.log(`❌ فشلت جميع السيرفرات في إعطاء رابط مباشر. جاري التقاط لقطة شاشة للأعطال...`);
+        if (!validStreamUrl) {
+            console.log(`❌ فشلت جميع السيرفرات في إعطاء رابط قابل للوصول والتحميل. جاري تصوير الشاشة...`);
             await page.screenshot({ path: 'failed-page.png', fullPage: true });
-            throw new Error("لم نتمكن من استخراج الرابط المباشر للمشغل من أي سيرفر.");
+            throw new Error("لم نجد أي سيرفر شغال ومفتوح الحماية.");
         }
         
-        return { title: randomMovie.title, streamUrl: directStreamUrl, referer: watchUrl };
+        return { title: randomMovie.title, streamUrl: validStreamUrl, referer: watchUrl };
 
     } catch (e) {
         console.error(`❌ فشل في مرحلة الكشط:`, e.message);
@@ -103,19 +134,19 @@ async function getMovieData() {
     }
 }
 
-// 2. دالة فحص المدة والقص مع تخطي حماية الـ 403 Forbidden
+// 2. دالة فحص المدة والقص عبر FFmpeg
 function processVideoClip(streamUrl, movieTitle, refererUrl) {
     try {
-        console.log(`⏱️ جاري فحص مدة الفيلم عبر ffprobe الآمن من الحظر...`);
+        console.log(`⏱️ جاري فحص مدة الفيلم عبر ffprobe...`);
         
-        // تمرير الـ Headers للأداة لفك التشفير والحماية 403
-        const durationCmd = `ffprobe -v error -headers "User-Agent: ${CONFIG.userAgent}\r\nReferer: ${refererUrl}\r\n" -show_entries format=duration -of default=noprint_wrappers=1:nocorrect_header=0 "${streamUrl}"`;
+        // تم تنظيف الأمر تماماً من خيارات الـ header المتعارضة
+        const durationCmd = `ffprobe -v error -headers "User-Agent: ${CONFIG.userAgent}\r\nReferer: ${refererUrl}\r\n" -show_entries format=duration -of default=noprint_wrappers=1 "${streamUrl}"`;
         const durationOutput = execSync(durationCmd, { encoding: 'utf-8' }).trim();
         
         const totalSeconds = Math.floor(parseFloat(durationOutput.split('=')[1] || durationOutput));
 
         if (isNaN(totalSeconds) || totalSeconds <= 0) {
-            throw new Error(`لم نتمكن من قراءة مدة الفيديو. المخرجات: ${durationOutput}`);
+            throw new Error(`لم نتمكن من قراءة مدة الفيديو بشكل صحيح.`);
         }
 
         console.log(`🎬 مدة الفيلم الإجمالية: ${totalSeconds} ثانية.`);
@@ -131,14 +162,13 @@ function processVideoClip(streamUrl, movieTitle, refererUrl) {
         const startTimeStr = new Date(randomStart * 1000).toISOString().substr(11, 8);
         
         console.log(`✂️ التوقيت المختار للقص: ${startTimeStr}`);
-        console.log(`🎨 جاري بدء معالجة اللقطة وحفظها...`);
+        console.log(`🎨 جاري بدء معالجة اللقطة عمودياً وإضافة الفلاتر والنصوص...`);
 
-        // تمرير نفس الـ Headers لـ ffmpeg لتجاوز حظر التحميل
         const ffmpegCmd = `ffmpeg -headers "User-Agent: ${CONFIG.userAgent}\r\nReferer: ${refererUrl}\r\n" -ss ${startTimeStr} -i "${streamUrl}" -t 00:02:00 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setpts=0.95*PTS,scale=iw*1.02:ih*1.02,crop=iw/1.02:ih/1.02,eq=brightness=0.03:contrast=1.05,drawtext=fontfile=/usr/share/fonts/truetype/kacst/KacstBook.ttf:text='${movieTitle}':fontcolor=white:fontsize=45:x=(w-text_w)/2:y=250,drawtext=fontfile=/usr/share/fonts/truetype/kacst/KacstBook.ttf:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=35:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -c:a aac -af "atempo=1.05" -y ${CONFIG.outputVideo}`;
 
         execSync(ffmpegCmd, { stdio: 'inherit' });
         
-        console.log(`🚀 تمت العملية بنجاح! تم حفظ الفيديو: ${CONFIG.outputVideo}`);
+        console.log(`🚀 تمت العملية بنجاح كامل! تم إنتاج مقطع تيك توك: ${CONFIG.outputVideo}`);
         return true;
 
     } catch (e) {
@@ -149,18 +179,18 @@ function processVideoClip(streamUrl, movieTitle, refererUrl) {
 
 // المحرك الرئيسي
 (async () => {
-    console.log("🚀 بدء تشغيل سكريبت الأفلام المحدث...");
+    console.log("🚀 بدء تشغيل سكريبت الأفلام الذكي مع نظام فحص الحماية...");
     
     const movieData = await getMovieData();
     
     if (movieData && movieData.streamUrl) {
-        console.log(`\n🍿 اسم الفيلم: ${movieData.title}`);
+        console.log(`\n🍿 اسم الفيلم النهائي المعتمد: ${movieData.title}`);
         
         const success = processVideoClip(movieData.streamUrl, movieData.title, movieData.referer);
         if (success) {
-            console.log("\n✨ انتهت معالجة الفيديو بنجاح!");
+            console.log("\n✨ تم تجهيز المقطع بنجاح كامل وصافٍ دون أي أخطاء تداخل!");
         }
     } else {
-        console.log("\n❌ انتهى السكريبت بالفشل في الحصول على رابط بث.");
+        console.log("\n❌ انتهى السكريبت لعدم وجود سيرفر مفتوح الحماية في هذا الفيلم.");
     }
 })();
