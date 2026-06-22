@@ -14,23 +14,13 @@ const CONFIG = {
     fontPath: '/tmp/Cairo-Bold.ttf'
 };
 
-function downloadArabicFont() {
-    if (!fs.existsSync(CONFIG.fontPath)) {
-        console.log("📥 جاري تحميل الخط العربي لضمان وضوح النصوص...");
-        try {
-            execSync(`curl -L -s "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo%5Bwght%5D.ttf" -o ${CONFIG.fontPath}`);
-            console.log("✅ تم تحميل الخط بنجاح.");
-        } catch (e) {
-            console.log("⚠️ فشل تحميل خط Cairo، سيتم استخدام الخط البديل.");
-            CONFIG.fontPath = '/usr/share/fonts/truetype/kacst/KacstBook.ttf';
-        }
+async function diagnosticRun() {
+    console.log("🛠️ بدء تشغيل سكريبت التشخيص وتصوير المراحل خطوة بخطوة...");
+    
+    // تأكد من وجود المجلد لحفظ الصور
+    if (!fs.existsSync('./screenshots')) {
+        fs.mkdirSync('./screenshots');
     }
-}
-
-async function startScreenCapture() {
-    downloadArabicFont();
-    const currentDisplay = process.env.DISPLAY || ':99';
-    console.log(`🖥️ الشاشة الافتراضية المعتمدة: ${currentDisplay}`);
 
     const browser = await puppeteer.launch({
         headless: false, 
@@ -47,9 +37,13 @@ async function startScreenCapture() {
     await page.setViewport({ width: 1080, height: 1920 });
 
     try {
-        console.log(`🔎 1. جاري فتح صفحة الأفلام الرئيسية لاختيار فيلم...`);
+        // المرحلة 1: فتح الموقع الرئيسي لاختيار فيلم
+        console.log(`🔎 1. جاري فتح صفحة الأفلام الرئيسية...`);
         await page.goto(MOVIES_SITE, { waitUntil: 'networkidle2', timeout: 60000 });
+        await page.screenshot({ path: './screenshots/step1_main_site.png' });
+        console.log("📸 تم حفظ صورة المرحلة 1: الصفحة الرئيسية.");
 
+        // كشط واختيار فيلم عشوائي
         const movies = await page.evaluate(() => {
             const items = Array.from(document.querySelectorAll('.Small--Box a.recent--block'));
             return items.map(item => ({
@@ -58,53 +52,46 @@ async function startScreenCapture() {
             }));
         });
 
+        if (movies.length === 0) throw new Error("لم يتم العثور على أفلام.");
         const randomMovie = movies[Math.floor(Math.random() * movies.length)];
         
-        // 🔴 تطبيق فكرتك العبقرية: بناء رابط التضمين والشاشة الكاملة مباشرة
+        // بناء رابط التضمين بناءً على اكتشافك
         const embedUrl = randomMovie.url.endsWith('/') ? `${randomMovie.url}?embedScreen=true` : `${randomMovie.url}/?embedScreen=true`;
         
         console.log(`🎬 الفيلم المختار: ${randomMovie.title}`);
         console.log(`🚀 2. جاري الانتقال مباشرة إلى رابط التضمين السحري: ${embedUrl}`);
 
+        // المرحلة 2: فتح رابط التضمين وقبل التشغيل
+        console.log(`🔗 2. جاري فتح رابط التضمين...`);
         await page.goto(embedUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        await page.screenshot({ path: './screenshots/step2_embed_url.png' });
+        console.log("📸 تم حفظ صورة المرحلة 2: بعد فتح رابط التضمين.");
 
-        // انتظر 10 ثوانٍ ليتأكد البوت من تحميل مشغل التضمين النظيف بالكامل
+        // المرحلة 3: انتظار تحميل المشغل بالكامل
+        console.log(`⏳ 3. انتظار تحميل المشغل...`);
         await new Promise(r => setTimeout(r, 10000));
+        await page.screenshot({ path: './screenshots/step3_after_wait.png' });
+        console.log("📸 تم حفظ صورة المرحلة 3: بعد انتظار تحميل المشغل.");
 
-        // محاكاة نقرة بشرية في منتصف الشاشة لتخطي زر Play البدائي وتفعيل الصوت تلقائياً
-        console.log(`鼠标 3. إرسال نقرة تشغيل لبدء البث السينمائي الفعلي...`);
+        // المرحلة 4: محاولة الضغط في منتصف الشاشة للتشغيل
+        console.log(`🖱️ 4. جاري إرسال نقرة تشغيل للمشغل...`);
         await page.mouse.click(540, 960); 
+        await page.screenshot({ path: './screenshots/step4_after_click.png' });
+        console.log("📸 تم حفظ صورة المرحلة 4: بعد نقرة التشغيل.");
 
-        // انتظار ثوانٍ معدودة للتأكد من انطلاق العرض واختفاء أيقونة التشغيل
-        await new Promise(r => setTimeout(r, 4000));
+        // المرحلة 5: الحالة النهائية بعد النقرة
+        await new Promise(r => setTimeout(r, 5000));
+        await page.screenshot({ path: './screenshots/step5_final_diagnostic.png' });
+        console.log("📸 تم حفظ صورة المرحلة 5: الحالة النهائية للمشغل.");
 
-        console.log(`🎥 🔴 4. جاري تسجيل الشاشة الافتراضية الآن صوت وصورة (لمدة 60 ثانية)...`);
-        const recordCmd = `ffmpeg -f x11grab -video_size 1080x1920 -i ${currentDisplay} -f pulse -i default -t 60 -c:v libx264 -pix_fmt yuv420p -y ${CONFIG.rawCapture}`;
+        console.log("\n🚀 انتهت عملية التشخيص وحفظ الصور بنجاح كامل.");
         
-        execSync(recordCmd, { env: process.env, stdio: 'inherit' });
-        
-        console.log(`🛑 تم الانتهاء من رصد وتسجيل المقطع بنجاح.`);
-        await browser.close();
-
-        // مرحلة المعالجة اللونية الاحترافية وطباعة النصوص بخط Cairo العربي بدون مربعات
-        console.log(`🎨 5. جاري فلترة ألوان الفيديو وطباعة العنوان التسويقي...`);
-        const filterCmd = `ffmpeg -i ${CONFIG.rawCapture} -vf "setpts=0.95*PTS,eq=brightness=0.03:contrast=1.05,drawtext=fontfile=${CONFIG.fontPath}:text='${randomMovie.title}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=250,drawtext=fontfile=${CONFIG.fontPath}:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=32:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -c:a aac -af "atempo=1.05" -y ${CONFIG.outputVideo}`;
-        
-        execSync(filterCmd, { env: process.env, stdio: 'inherit' });
-        
-        if (fs.existsSync(CONFIG.rawCapture)) fs.unlinkSync(CONFIG.rawCapture);
-
-        console.log(`🚀 مبارك! تم إنتاج مقطع التيك توك النهائي بنجاح خارق: ${CONFIG.outputVideo}`);
-        return true;
-
     } catch (e) {
-        console.error(`❌ حدث خطأ أثناء تطبيق الحل الذكي:`, e.message);
-        try { await page.screenshot({ path: 'embed_error.png' }); } catch(err){}
+        console.error(`❌ حدث خطأ غير متوقع أثناء التشخيص:`, e.message);
+        await page.screenshot({ path: './screenshots/diagnostic_error.png' });
+    } finally {
         await browser.close();
-        return false;
     }
 }
 
-(async () => {
-    await startScreenCapture();
-})();
+diagnosticRun();
