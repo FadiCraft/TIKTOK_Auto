@@ -40,7 +40,6 @@ async function startScreenCapture() {
             '--window-size=1080,1920',
             '--start-fullscreen',
             '--autoplay-policy=no-user-gesture-required',
-            // 🔴 الإعدادات السحرية لمنع انهيار الـ JW Player وحل خطأ RC2USRC والصفحة البيضاء:
             '--use-gl=angle',
             '--use-angle=swiftshader',
             '--disable-gpu-program-cache',
@@ -67,7 +66,7 @@ async function startScreenCapture() {
         if (movies.length === 0) throw new Error("لم يتم العثور على أفلام.");
         const randomMovie = movies[Math.floor(Math.random() * movies.length)];
         
-        // بناء رابط التضمين السحري الذكي الخاص بك
+        // بناء رابط التضمين المباشر
         const embedUrl = randomMovie.url.endsWith('/') ? `${randomMovie.url}?embedScreen=true` : `${randomMovie.url}/?embedScreen=true`;
         
         console.log(`🎬 الفيلم المختار: ${randomMovie.title}`);
@@ -75,49 +74,38 @@ async function startScreenCapture() {
         
         await page.goto(embedUrl, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // انتظار تحميل عناصر المشغل والـ JW Player في الخلفية
-        await new Promise(r => setTimeout(r, 12000));
+        // انتظار كافٍ (15 ثانية) لضمان تحميل صفحة التضمين بالكامل بما فيها الـ iframe الداخلي
+        console.log("⏳ انتظار اكتمال تحميل عناصر المشغل والـ iframe بالكامل...");
+        await new Promise(r => setTimeout(r, 15000));
 
-        // 🔴 الضغط المباشر على كود عنصر التشغيل (JW Play Button) الذي استخرجته أنت
-        console.log(`🖱️ 3. جاري استهداف واقتناص زر تشغيل الـ JW Player برمجياً...`);
-        await page.evaluate(() => {
-            const playBtn = document.querySelector('.jw-display-icon-container, .jw-icon-display, .jw-svg-icon-play');
-            if (playBtn) {
-                playBtn.click();
-                console.log("✅ تم النقر على زر التشغيل بنجاح.");
-            } else {
-                // حل بديل في حال وجود المشغل داخل iframe داخلي
-                const iframe = document.querySelector('iframe');
-                if (iframe) {
-                    iframe.contentWindow.document.querySelector('.jw-icon-display')?.click();
-                }
-            }
-        });
+        // 🔴 تجاوز حظر الـ Cross-Origin بنقرة ماوس إحداثية حرة ومباشرة في منتصف الشاشة الافتراضية تماماً
+        console.log(`🖱️ 3. جاري إرسال نقرة ماوس حرة في منتصف الشاشة لتشغيل الفيديو وتخطي الحماية...`);
+        await page.mouse.click(540, 960); 
 
-        // انتظر 5 ثوانٍ ليتأكد البوت من اختفاء الواجهات وبدء العرض الفعلي للفيلم
+        // انتظر 5 ثوانٍ لنتأكد أن الفيديو بدأ بثه الفعلي واختفت واجهات التشغيل
         await new Promise(r => setTimeout(r, 5000));
 
-        console.log(`🎥 🔴 4. جاري تسجيل الشاشة الآن صوت وصورة (لمدة 60 ثانية بالضبط)...`);
+        console.log(`🎥 🔴 4. جاري تسجيل الشاشة الافتراضية فيديو الآن (لمدة 60 ثانية)...`);
         const recordCmd = `ffmpeg -f x11grab -video_size 1080x1920 -i ${currentDisplay} -f pulse -i default -t 60 -c:v libx264 -pix_fmt yuv420p -y ${CONFIG.rawCapture}`;
         
         execSync(recordCmd, { env: process.env, stdio: 'inherit' });
         
-        console.log(`🛑 تم الانتهاء من التسجيل السينمائي بنجاح.`);
+        console.log(`🛑 تم الانتهاء من تسجيل المقطع بنجاح.`);
         await browser.close();
 
-        // طباعة النصوص العربية بخط القاهرة الفاخر وبدون أي مربعات مشوهة
-        console.log(`🎨 5. جاري دمج النصوص التسويقية وتجهيز ملف تيك توك النهائي...`);
+        // معالجة الفيديو النهائي وإضافة العناوين بخط القاهرة العربي
+        console.log(`🎨 5. جاري معالجة الفيديو وطباعة العناوين التسويقية...`);
         const filterCmd = `ffmpeg -i ${CONFIG.rawCapture} -vf "setpts=0.95*PTS,eq=brightness=0.03:contrast=1.05,drawtext=fontfile=${CONFIG.fontPath}:text='${randomMovie.title}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=250,drawtext=fontfile=${CONFIG.fontPath}:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=32:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -c:a aac -af "atempo=1.05" -y ${CONFIG.outputVideo}`;
         
         execSync(filterCmd, { env: process.env, stdio: 'inherit' });
         
         if (fs.existsSync(CONFIG.rawCapture)) fs.unlinkSync(CONFIG.rawCapture);
 
-        console.log(`🚀 نجاح باهر! الفيديو جاهز للرفع الآن بدقة كاملة: ${CONFIG.outputVideo}`);
+        console.log(`🚀 نجاح باهر! فيديو المقطع السينمائي جاهز ومسجل بالكامل: ${CONFIG.outputVideo}`);
         return true;
 
     } catch (e) {
-        console.error(`❌ خطأ أثناء معالجة تشغيل المشغل:`, e.message);
+        console.error(`❌ خطأ أثناء تشغيل وتصوير الفيديو:`, e.message);
         try { await page.screenshot({ path: 'final_error.png' }); } catch(err){}
         await browser.close();
         return false;
