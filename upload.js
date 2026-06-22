@@ -10,13 +10,27 @@ const CONFIG = {
     fixedText: " | شاهد الفيلم كامل الرابط في البايو 🔗🍿",
     outputVideo: 'tiktok_ready.mp4',
     rawCapture: 'raw_capture.mp4',
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    fontPath: '/tmp/Cairo-Bold.ttf'
 };
 
+function downloadArabicFont() {
+    if (!fs.existsSync(CONFIG.fontPath)) {
+        console.log("📥 جاري تحميل الخط العربي لضمان وضوح النصوص...");
+        try {
+            execSync(`curl -L -s "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo%5Bwght%5D.ttf" -o ${CONFIG.fontPath}`);
+            console.log("✅ تم تحميل الخط بنجاح.");
+        } catch (e) {
+            console.log("⚠️ فشل تحميل خط Cairo.");
+            CONFIG.fontPath = '/usr/share/fonts/truetype/kacst/KacstBook.ttf';
+        }
+    }
+}
+
 async function startScreenCapture() {
-    // جلب رقم الشاشة الافتراضية الديناميكي من السيرفر (مثل :99 أو غيره)
+    downloadArabicFont();
     const currentDisplay = process.env.DISPLAY || ':0.0';
-    console.log(`🖥️ الشاشة الافتراضية المكتشفة حالياً: ${currentDisplay}`);
+    console.log(`🖥️ الشاشة الافتراضية المعتمدة: ${currentDisplay}`);
 
     const browser = await puppeteer.launch({
         headless: false, 
@@ -25,7 +39,11 @@ async function startScreenCapture() {
             '--disable-setuid-sandbox',
             '--window-size=1080,1920',
             '--start-fullscreen',
-            '--autoplay-policy=no-user-gesture-required'
+            '--autoplay-policy=no-user-gesture-required',
+            // كرت شاشة وهمي قوي لمنع الشاشة السوداء في المواقع المعتمدة على الـ WebGL أو حمايات الفيديو
+            '--use-gl=angle',
+            '--use-angle=swiftshader',
+            '--disable-gpu-program-cache'
         ]
     });
     const page = await browser.newPage();
@@ -52,55 +70,60 @@ async function startScreenCapture() {
 
         await page.goto(watchUrl, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        console.log(`🔄 جاري تشغيل المشغل والتحضير للتسجيل...`);
+        console.log(`🔄 جاري اختيار سيرفر البث المتاح...`);
         await page.evaluate(() => {
             const servers = Array.from(document.querySelectorAll('.watch--servers--list ul li'));
             const target = servers.find(s => s.innerText.includes('StreamWish') || s.innerText.includes('متعدد')) || servers[0];
             if (target) target.click();
         });
 
-        // انتظار تحميل وتشغيل المشغل
-        await new Promise(r => setTimeout(r, 12000));
+        // انتظار كافٍ لتحميل عناصر وإعلانات المشغل في الخلفية بدون مشاكل
+        await new Promise(r => setTimeout(r, 15000));
 
-        // تنظيف الصفحة وتكبير المشغل عمودياً بمقاسات الهاتف
+        // بدلاً من حذف الصفحة، نقوم بجعل المشغل يغطي كل شيء بالـ CSS ليبقى شغالاً ومحمياً
+        console.log(`🧹 جاري تكبير المشغل على كامل أبعاد الشاشة تيك توك...`);
         await page.evaluate(() => {
             const player = document.querySelector('.watch-player-box, #video_player, iframe');
             if (player) {
-                document.body.innerHTML = '';
-                document.body.appendChild(player);
-                player.style.width = '1080px';
-                player.style.height = '1920px';
-                player.style.position = 'fixed';
-                player.style.top = '0';
-                player.style.left = '0';
-                player.style.zIndex = '99999';
+                player.style.setProperty('position', 'fixed', 'important');
+                player.style.setProperty('top', '0', 'important');
+                player.style.setProperty('left', '0', 'important');
+                player.style.setProperty('width', '1080px', 'important');
+                player.style.setProperty('height', '1920px', 'important');
+                player.style.setProperty('z-index', '999999', 'important');
+                player.style.setProperty('background', 'black', 'important');
             }
         });
 
-        await new Promise(r => setTimeout(r, 3000));
-        console.log(`🎥 🔴 جاري تسجيل الشاشة الافتراضية ${currentDisplay} (لمدة 60 ثانية)...`);
+        await new Promise(r => setTimeout(r, 5000));
 
-        // تم استبدال :0.0 بالمتغير الديناميكي currentDisplay لمنع خطأ فتح الـ Display
+        // محاكاة ضغطة بشرية لتشغيل المقطع الفعلي
+        console.log(`🖱️ جاري إرسال نقرة تشغيل للمشغل...`);
+        await page.mouse.click(540, 960); 
+
+        // انتظر 7 ثوانٍ لنتأكد أن الإعلان اختفى وبدأ البث الفعلي
+        await new Promise(r => setTimeout(r, 7000));
+
+        console.log(`🎥 🔴 جاري تسجيل الشاشة الآن (لمدة 60 ثانية)...`);
         const recordCmd = `ffmpeg -f x11grab -video_size 1080x1920 -i ${currentDisplay} -f pulse -i default -t 60 -c:v libx264 -pix_fmt yuv420p -y ${CONFIG.rawCapture}`;
         
         execSync(recordCmd, { env: process.env, stdio: 'inherit' });
         
-        console.log(`🛑 تم الانتهاء من تسجيل المقطع الخام بنجاح.`);
+        console.log(`🛑 تم الانتهاء من التسجيل بنجاح.`);
         await browser.close();
 
-        // مرحلة المعالجة والفلترة وإضافة النصوص والخطوط
-        console.log(`🎨 جاري معالجة الفيديو النهائي وإضافة النصوص الترويجية...`);
-        const filterCmd = `ffmpeg -i ${CONFIG.rawCapture} -vf "setpts=0.95*PTS,eq=brightness=0.03:contrast=1.05,drawtext=fontfile=/usr/share/fonts/truetype/kacst/KacstBook.ttf:text='${randomMovie.title}':fontcolor=white:fontsize=45:x=(w-text_w)/2:y=250,drawtext=fontfile=/usr/share/fonts/truetype/kacst/KacstBook.ttf:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=35:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -c:a aac -af "atempo=1.05" -y ${CONFIG.outputVideo}`;
+        console.log(`🎨 جاري معالجة وتعديل ألوان الفيديو وطباعة النصوص العربية...`);
+        const filterCmd = `ffmpeg -i ${CONFIG.rawCapture} -vf "setpts=0.95*PTS,eq=brightness=0.03:contrast=1.05,drawtext=fontfile=${CONFIG.fontPath}:text='${randomMovie.title}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=250,drawtext=fontfile=${CONFIG.fontPath}:text='${CONFIG.fixedText}':fontcolor=yellow:fontsize=32:x=(w-text_w)/2:y=1650" -c:v libx264 -crf 23 -c:a aac -af "atempo=1.05" -y ${CONFIG.outputVideo}`;
         
         execSync(filterCmd, { env: process.env, stdio: 'inherit' });
         
         if (fs.existsSync(CONFIG.rawCapture)) fs.unlinkSync(CONFIG.rawCapture);
 
-        console.log(`🚀 رائع! تم إنتاج الفيديو النهائي بنجاح تام: ${CONFIG.outputVideo}`);
+        console.log(`🚀 تم إنتاج مقطع تيك توك بنجاح وبدون مشاكل سوداء: ${CONFIG.outputVideo}`);
         return true;
 
     } catch (e) {
-        console.error(`❌ فشل أثناء محاولة التصوير أو المعالجة:`, e.message);
+        console.error(`❌ حدث خطأ غير متوقع:`, e.message);
         try { await page.screenshot({ path: 'failed-screen.png' }); } catch(err){}
         await browser.close();
         return false;
