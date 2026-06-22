@@ -18,6 +18,8 @@ jobs:
       - name: Install Dependencies
         run: |
           npm install
+          # 🟢 [تحديث جوهري]: تثبيت مكتبة تسجيل الشاشة لضمان عملها داخل السيرفر
+          npm install puppeteer-screen-recorder
           sudo apt-get update
           sudo apt-get install -y xvfb ffmpeg
 
@@ -27,15 +29,7 @@ jobs:
         run: |
           xvfb-run --server-args="-screen 0 1080x1920x24" node upload.js
 
-      # 🔴 خطوة رفع الصور (للتشخيص إذا احتجتها)
-      - name: Upload Screenshots for Diagnostics
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: bot-screenshots
-          path: ./screenshots/
-
-      # 🎬 خطوة رفع الفيديو النهائي المجهز للتيك توك
+      # 🎬 خطوة رفع الفيديو النهائي المجهز للتيك توك (شامل تسجيل العملية من البداية)
       - name: Upload TikTok Video Artifact
         uses: actions/upload-artifact@v4
         if: always()
